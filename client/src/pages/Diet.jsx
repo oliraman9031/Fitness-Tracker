@@ -77,10 +77,15 @@ function Diet() {
 
             const data = await response.json();
 
-            setFoodLogs(data);
+            if (!response.ok) {
+                throw new Error(data.message || "Unable to load food logs");
+            }
+
+            setFoodLogs(Array.isArray(data) ? data : []);
 
         } catch (error) {
             console.error(error);
+            setFoodLogs([]);
         }
     }
 

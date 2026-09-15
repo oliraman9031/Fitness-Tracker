@@ -8,9 +8,17 @@ router.post("/", async (req, res) => {
     try {
         const { user_id, weight } = req.body;
 
-        if (!user_id || !weight) {
+        const numericWeight = Number(weight);
+
+        if (!user_id || weight === undefined || weight === "") {
             return res.status(400).json({
                 message: "User ID and weight are required"
+            });
+        }
+
+        if (!Number.isFinite(numericWeight) || numericWeight <= 0) {
+            return res.status(400).json({
+                message: "Weight must be a positive number"
             });
         }
 
@@ -18,7 +26,7 @@ router.post("/", async (req, res) => {
             `INSERT INTO progress_records (user_id, weight)
              VALUES ($1, $2)
              RETURNING *`,
-            [user_id, weight]
+            [user_id, numericWeight]
         );
 
         res.status(201).json({
@@ -27,10 +35,10 @@ router.post("/", async (req, res) => {
         });
 
     } catch (error) {
-        console.error(error);
+        console.error("Failed to create progress record:", error);
 
         res.status(500).json({
-            message: "Server error"
+            message: "Unable to save progress record"
         });
     }
 });
@@ -52,10 +60,10 @@ router.get("/:userId", async (req, res) => {
         res.json(result.rows);
 
     } catch (error) {
-        console.error(error);
+        console.error("Failed to load progress records:", error);
 
         res.status(500).json({
-            message: "Server error"
+            message: "Unable to load progress records"
         });
     }
 });
