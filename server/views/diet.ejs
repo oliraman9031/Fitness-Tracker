@@ -1,0 +1,5 @@
+<%- include("partials/shell-start", { title }) %>
+<section class="hero"><p class="eyebrow">NUTRITION</p><h1>Diet</h1></section>
+<section class="panel"><p class="muted">Today's calorie intake</p><h2>0 kcal</h2></section>
+<section class="panel"><h2>Add Food</h2><form method="post" action="/api/diet"><input type="hidden" name="user_id" value="1" /><div class="form-grid"><input name="food_name" placeholder="Food name" required /><select name="meal_type"><option>Breakfast</option><option>Lunch</option><option>Snack</option><option>Dinner</option></select><input name="quantity" placeholder="Quantity" /><input name="calories" type="number" placeholder="Calories (kcal)" required /><input name="protein" type="number" placeholder="Protein (g)" /><input name="carbs" type="number" placeholder="Carbs (g)" /><input name="fat" type="number" placeholder="Fat (g)" /></div><button class="button" type="submit">Add Food</button></form></section>
+<%- include("partials/shell-end") %>

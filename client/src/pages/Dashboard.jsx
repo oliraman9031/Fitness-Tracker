@@ -1,12 +1,38 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Navbar from "../components/NavBar";
 import Sidebar from "../components/Sidebar";
 import StatCard from "../components/StatCard";
 import WorkoutCard from "../components/WorkoutCard";
 import ActivityCard from "../components/ActivityChart";
 import ProgressChart from "../components/PorgressChart";
+import { getDietLogs } from "../services/foodApi";
+
+const nutritionMetrics = [
+  { key: "calories", label: "Calories", unit: "kcal" },
+  { key: "protein", label: "Protein", unit: "g" },
+  { key: "carbs", label: "Carbs", unit: "g" },
+  { key: "fat", label: "Fat", unit: "g" },
+  { key: "fiber", label: "Fiber", unit: "g" },
+  { key: "sugar", label: "Sugar", unit: "g" },
+  { key: "sodium", label: "Sodium", unit: "mg" },
+];
 
 function Dashboard() {
+  const [dietLogs, setDietLogs] = useState([]);
+  const [dietError, setDietError] = useState("");
+
+  useEffect(() => {
+    getDietLogs(1)
+      .then(setDietLogs)
+      .catch((error) => setDietError(error.message));
+  }, []);
+
+  const nutritionTotals = nutritionMetrics.map((metric) => ({
+    ...metric,
+    value: dietLogs.reduce((total, item) => total + (Number(item[metric.key]) || 0), 0),
+  }));
+
   const exercise = {
     name: "Bench Press",
     muscle_group: "Chest",
@@ -55,6 +81,32 @@ function Dashboard() {
             <StatCard title="Workout" value="45" unit="min" accent="violet" />
             <StatCard title="Water" value="2.2" unit="L" accent="emerald" />
             <StatCard title="Sleep" value="7.5" unit="hrs" accent="amber" />
+          </section>
+
+          <section className="rounded-[28px] border border-slate-800 bg-slate-900/80 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.28em] text-emerald-300">Today's intake</p>
+                <h2 className="mt-2 text-2xl font-bold text-white">Nutrition summary</h2>
+              </div>
+              <Link to="/diet" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-cyan-200 hover:bg-slate-800">
+                Open Diet
+              </Link>
+            </div>
+            {dietError ? (
+              <p role="alert" className="mt-4 text-sm text-rose-300">{dietError}</p>
+            ) : (
+              <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+                {nutritionTotals.map(({ key, label, unit, value }) => (
+                  <div key={key} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                    <dt className="text-xs text-slate-400">{label}</dt>
+                    <dd className="mt-1 font-semibold text-white">
+                      {Number(value.toFixed(1))} {unit}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </section>
 
           <section className="grid gap-8 xl:grid-cols-[1.5fr_0.9fr]">

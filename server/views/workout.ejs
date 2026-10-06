@@ -1,0 +1,6 @@
+<%- include("partials/shell-start", { title }) %>
+<section class="hero"><p class="eyebrow">PLAN</p><h1>Workout</h1></section>
+<section class="grid-three">
+  <% workouts.forEach((workout) => { %><article class="panel"><span class="muted">SESSION</span><h2><%= workout.name %></h2><span><%= workout.time %></span><p class="muted"><%= workout.focus %></p></article><% }) %>
+</section>
+<%- include("partials/shell-end") %>

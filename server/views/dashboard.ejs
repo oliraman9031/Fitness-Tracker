@@ -1,0 +1,7 @@
+<%- include("partials/shell-start", { title }) %>
+<section class="hero"><p class="eyebrow">OVERVIEW</p><h1>Dashboard</h1><p class="muted">7 day streak</p></section>
+<section class="grid">
+  <% stats.forEach((stat) => { %><div class="stat"><span><%= stat.title %></span><strong><%= stat.value %></strong><span><%= stat.unit %></span></div><% }) %>
+</section>
+<section class="panel"><p class="eyebrow">COACH NOTE</p><h2>Recovery balance</h2><p class="muted">Your movement and hydration are trending well. Keep your protein intake steady and aim for one more recovery walk this evening.</p></section>
+<%- include("partials/shell-end") %>

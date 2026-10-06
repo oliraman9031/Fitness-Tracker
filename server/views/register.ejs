@@ -1,0 +1,4 @@
+<%- include("partials/head", { title }) %>
+<main class="auth"><section class="auth-card"><p class="eyebrow">START STRONG</p><h1>Create account</h1><% if (typeof message !== "undefined") { %><p class="message"><%= message %></p><% } %><form method="post" action="/register"><input name="name" placeholder="Full name" required /><input name="email" type="email" placeholder="Email" required /><input name="password" type="password" placeholder="Password" required /><button class="button" type="submit">Sign up</button></form><p class="muted">Already have an account? <a href="/login">Login</a></p></section></main>
+</body>
+</html>
