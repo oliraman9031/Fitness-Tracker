@@ -19,6 +19,13 @@ const pageRoutes = require("./routes/pageRoutes");
 const errorHandler = require("./middleware/errorHandler");
 const foodRoutes = require("./routes/foodRoutes");
 
+const workoutRoutes = require("./routes/workoutRoutes");
+const coachRoutes = require("./routes/coachRoutes");
+
+
+app.use("/api/workouts", workoutRoutes);
+app.use("/api/coach", coachRoutes);
+
 
 
 app.use("/api/progress", progressRoutes);
@@ -85,7 +92,44 @@ async function startServer() {
         ADD COLUMN IF NOT EXISTS quantity_unit TEXT NOT NULL DEFAULT 'g',
         ADD COLUMN IF NOT EXISTS fiber NUMERIC,
         ADD COLUMN IF NOT EXISTS sugar NUMERIC,
-        ADD COLUMN IF NOT EXISTS sodium NUMERIC
+        ADD COLUMN IF NOT EXISTS sodium NUMERIC,
+        ADD COLUMN IF NOT EXISTS is_consumed BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMPTZ DEFAULT NOW()
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS workout_logs (
+        workout_id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id),
+        exercise_name VARCHAR(150) NOT NULL,
+        duration_minutes INTEGER NOT NULL
+          CHECK (duration_minutes BETWEEN 1 AND 1440),
+        calories_burned NUMERIC(8, 2)
+          CHECK (calories_burned IS NULL OR calories_burned >= 0),
+        completed BOOLEAN NOT NULL DEFAULT TRUE,
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS meal_plans (
+        plan_id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id),
+        plan_date DATE NOT NULL,
+        plan_data JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_id, plan_date)
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_food_logs_user_created
+        ON food_logs (user_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_workout_logs_user_created
+        ON workout_logs (user_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_meal_plans_user_date
+        ON meal_plans (user_id, plan_date)
     `);
 
     await pool.query(`

@@ -103,6 +103,13 @@ DB_PASSWORD=your_postgres_password
 DB_PORT=5432
 USDA_API_URL=https://api.nal.usda.gov/fdc/v1
 USDA_API_KEY=your_usda_api_key
+# Optional paid provider; local Ollama is used by default.
+AI_PROVIDER=ollama
+AI_MODEL=qwen2.5:3b
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+# Optional when AI_PROVIDER=openai:
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4.1-mini
 ```
 
 Do **not** commit your `.env` file to GitHub.
@@ -170,6 +177,37 @@ GET  /api/diet/:userId
 ```
 
 Start the backend and frontend in separate terminals, then open `http://localhost:5173/diet`.
+
+### AI workout and meal guidance
+
+The Workout page uses the day's confirmed food logs and reported activity as
+context for exercise suggestions and a balanced three-day meal plan. Mark food
+as eaten with the Diet page checkboxes. When logging an activity, enter the
+calorie estimate from your device; uncheck **I completed this activity** if
+you could not complete it, and enter `0` if you did not burn any calories.
+The coach then refreshes meal guidance for the coming days. Calorie estimates
+are approximate, and the coach does not set exercise targets to compensate
+for food.
+
+Free local AI recommendations use Ollama and do not require an API key or
+internet access after the model is downloaded. Install Ollama from
+https://ollama.com/download, then run:
+
+```powershell
+ollama pull qwen2.5:3b
+```
+
+Keep Ollama running and start the backend. The server uses
+`http://127.0.0.1:11434` and `qwen2.5:3b` by default. Override these with
+`OLLAMA_BASE_URL` and `AI_MODEL` if needed. Set `AI_PROVIDER=rules` to use
+general non-generative guidance, or `AI_PROVIDER=openai` to opt into the
+optional OpenAI provider. OpenAI requires a valid key and available credits.
+
+The backend creates the workout and meal-plan tables and consumed-food
+tracking columns on startup; the existing `users` and `food_logs` tables
+must already exist. The current frontend still uses prototype user ID `1`;
+authentication must be connected before using this feature with multiple
+accounts.
 
 ## 📊 Progress Tracking
 

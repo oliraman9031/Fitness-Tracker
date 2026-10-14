@@ -1,306 +1,472 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+
+import React, { useEffect, useState } from "react";
 import Navbar from "../components/NavBar";
 import Sidebar from "../components/Sidebar";
-import FoodCard from "../components/food/FoodCard";
-import FoodDetails from "../components/food/FoodDetails";
-import FoodSearch from "../components/food/FoodSearch";
 import {
-    addFoodToDiet,
-    getDietLogs,
-    getFoodDetails,
-    saveFood
+  searchFoods,
+  getFoodDetails,
+  saveFood,
+  getFoodLogs,
+  updateConsumed,
 } from "../services/foodApi";
 
-const userId = 1;
-const mealTypes = ["Breakfast", "Lunch", "Dinner", "Snack"];
-const nutritionFields = [
-    { key: "calories", label: "Calories", unit: "kcal" },
-    { key: "protein", label: "Protein", unit: "g" },
-    { key: "carbs", label: "Carbs", unit: "g" },
-    { key: "fat", label: "Fat", unit: "g" },
-    { key: "fiber", label: "Fiber", unit: "g" },
-    { key: "sugar", label: "Sugar", unit: "g" },
-    { key: "sodium", label: "Sodium", unit: "mg" }
-];
+const USER_ID = 1; // Prototype only; replace with authenticated user.
 
-function totalFor(logs, field) {
-    return logs.reduce((total, log) => total + (Number(log[field]) || 0), 0);
-}
+const emptyFood = {
+  food_name: "",
+  meal_type: "Breakfast",
+  quantity: "100",
+  calories: "",
+  protein: "",
+  carbs: "",
+  fat: "",
+};
 
-function formatNutrition(value) {
-    return Number(value.toFixed(1)).toString();
-}
+function extractNutrients(food) {
+  const result = {
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+  };
 
-function Diet() {
-    const [results, setResults] = useState([]);
-    const [foodLogs, setFoodLogs] = useState([]);
-    const [logsLoading, setLogsLoading] = useState(true);
-    const [pageError, setPageError] = useState("");
-    const [detailsId, setDetailsId] = useState(null);
-    const [pendingFood, setPendingFood] = useState(null);
-    const [quantity, setQuantity] = useState("");
-    const [mealType, setMealType] = useState("Breakfast");
-    const [addingId, setAddingId] = useState(null);
-    const [saving, setSaving] = useState(false);
+  const nutrients = food.foodNutrients || [];
 
-    const loadFoodLogs = useCallback(async () => {
-        setLogsLoading(true);
-        try {
-            setFoodLogs(await getDietLogs(userId));
-            setPageError("");
-        } catch (error) {
-            setPageError(error.message);
-        } finally {
-            setLogsLoading(false);
-        }
-    }, []);
+  for (const item of nutrients) {
+    const nutrientName = (
+      item.nutrient?.name ||
+      item.nutrientName ||
+      item.name ||
+      ""
+    ).toLowerCase();
 
-    useEffect(() => {
-        loadFoodLogs();
-    }, [loadFoodLogs]);
-
-    const totals = useMemo(
-        () => Object.fromEntries(nutritionFields.map(({ key }) => [key, totalFor(foodLogs, key)])),
-        [foodLogs]
+    const value = Number(
+      item.amount ?? item.value ?? item.nutrient?.amount ?? 0
     );
 
-    function prepareFood(food) {
-        setDetailsId(null);
-        setPendingFood(food);
-        const servingSize = Number(food.servingSize);
-        setQuantity(String(Number.isFinite(servingSize) && servingSize > 0
-            ? Number(servingSize.toFixed(2))
-            : 100));
-        setMealType("Breakfast");
-        setPageError("");
+    if (!Number.isFinite(value)) continue;
+
+    if (nutrientName.includes("energy") &&
+        (nutrientName.includes("kcal") ||
+         (item.nutrient?.unitName || item.unitName || "").toLowerCase() === "kcal")) {
+      result.calories = value;
+    } else if (
+      nutrientName === "protein" ||
+      nutrientName.includes("protein,")
+    ) {
+      result.protein = value;
+    } else if (
+      nutrientName.includes("carbohydrate, by difference") ||
+      nutrientName === "carbohydrate"
+    ) {
+      result.carbs = value;
+    } else if (
+      nutrientName === "total lipid (fat)" ||
+      nutrientName === "total fat"
+    ) {
+      result.fat = value;
+    }
+  }
+
+  return result;
+}
+
+function localDate() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export default function Diet() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [food, setFood] = useState(emptyFood);
+  const [foodLogs, setFoodLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [quantity, setQuantity] = useState("100");
+
+  async function loadFoodLogs() {
+    try {
+      const data = await getFoodLogs(USER_ID);
+      setFoodLogs(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  useEffect(() => {
+    loadFoodLogs();
+  }, []);
+
+  async function handleSearch(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+
+    if (!query.trim()) return;
+
+    setLoading(true);
+
+    try {
+      const data = await searchFoods(query.trim());
+      const foods = Array.isArray(data)
+        ? data
+        : data.foods || data.data?.foods || [];
+
+      setResults(foods);
+
+      if (!foods.length) {
+        setMessage("No foods found. Try another search.");
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function selectFood(item) {
+    setError("");
+    setMessage("");
+
+    try {
+      const detail = await getFoodDetails(item.fdcId);
+      const nutrients = extractNutrients(detail);
+
+      setFood({
+        ...emptyFood,
+        food_name: detail.description || item.description,
+        calories: String(nutrients.calories),
+        protein: String(nutrients.protein),
+        carbs: String(nutrients.carbs),
+        fat: String(nutrients.fat),
+      });
+
+      setQuantity("100");
+      setMessage(
+        "Food details loaded. Confirm the nutrient values and serving size before saving."
+      );
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function handleFieldChange(event) {
+    setFood((previous) => ({
+      ...previous,
+      [event.target.name]: event.target.value,
+    }));
+  }
+
+  async function handleAddFood(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+
+    const grams = Number(quantity);
+
+    if (!Number.isFinite(grams) || grams <= 0) {
+      setError("Enter a valid serving size in grams.");
+      return;
     }
 
-    async function openAddForm(fdcId) {
-        setAddingId(fdcId);
-        setPageError("");
-        try {
-            prepareFood(await getFoodDetails(fdcId));
-        } catch (error) {
-            setPageError(error.message);
-        } finally {
-            setAddingId(null);
-        }
+    setSaving(true);
+
+    try {
+      // USDA nutrients are commonly reported per 100 g for
+      // applicable food data types. Scale them to the chosen portion.
+      const factor = grams / 100;
+
+      const payload = {
+        user_id: USER_ID,
+        food_name: food.food_name,
+        meal_type: food.meal_type,
+        quantity: grams,
+        quantity_unit: "g",
+        calories: Number(food.calories || 0) * factor,
+        protein: Number(food.protein || 0) * factor,
+        carbs: Number(food.carbs || 0) * factor,
+        fat: Number(food.fat || 0) * factor,
+        is_consumed: true,
+      };
+
+      await saveFood(payload);
+      setFood(emptyFood);
+      setQuantity("100");
+      setMessage("Food added successfully.");
+      await loadFoodLogs();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
     }
+  }
 
-    async function handleAddToDiet(event) {
-        event.preventDefault();
-        const amount = Number(quantity);
-        if (!Number.isFinite(amount) || amount <= 0) {
-            setPageError("Enter a quantity greater than zero.");
-            return;
-        }
+  async function toggleConsumed(item) {
+    setError("");
 
-        setSaving(true);
-        setPageError("");
-        try {
-            const savedFood = await saveFood(pendingFood);
-            await addFoodToDiet({
-                user_id: userId,
-                food_id: savedFood.id,
-                meal_type: mealType,
-                quantity: amount,
-                quantity_unit: savedFood.serving_unit || "g"
-            });
-            setPendingFood(null);
-            await loadFoodLogs();
-        } catch (error) {
-            setPageError(error.message);
-        } finally {
-            setSaving(false);
-        }
+    try {
+      await updateConsumed(
+        item.food_log_id,
+        USER_ID,
+        !item.is_consumed
+      );
+      await loadFoodLogs();
+    } catch (err) {
+      setError(err.message);
     }
+  }
 
-    const quantityUnit = pendingFood?.servingSizeUnit || "g";
+  const today = localDate();
 
-    return (
-        <div className="min-h-screen bg-slate-950 text-slate-100">
-            <Navbar />
-            <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:px-8">
-                <Sidebar />
-                <main className="min-w-0 flex-1 space-y-6">
-                    <section className="rounded-[32px] border border-slate-800 bg-slate-900/80 p-6">
-                        <p className="text-xs uppercase tracking-[0.32em] text-emerald-300">Nutrition</p>
-                        <h1 className="mt-3 text-3xl font-bold text-white">Diet</h1>
-                        <p className="mt-2 text-slate-400">
-                            Search USDA foods, choose a meal, and track nutrition for the amount you eat.
-                        </p>
-                    </section>
+  const todaysLogs = foodLogs.filter((item) => {
+    const createdDate = item.created_at
+      ? new Date(item.created_at).toLocaleDateString("en-CA")
+      : "";
+    return createdDate === today;
+  });
 
-                    <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-                        <div className="flex flex-wrap items-end justify-between gap-4">
-                            <div>
-                                <p className="text-sm text-slate-400">Today's nutrition</p>
-                                <p className="mt-1 text-3xl font-bold text-emerald-300">
-                                    {formatNutrition(totals.calories)} kcal
-                                </p>
-                            </div>
-                            <p className="text-sm text-slate-400">Totals update when a food is added.</p>
-                        </div>
-                        <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
-                            {nutritionFields.slice(1).map(({ key, label, unit }) => (
-                                <div key={key} className="rounded-xl border border-slate-700 bg-slate-950 p-3">
-                                    <dt className="text-xs text-slate-400">{label}</dt>
-                                    <dd className="mt-1 font-semibold text-white">
-                                        {formatNutrition(totals[key])} {unit}
-                                    </dd>
-                                </div>
-                            ))}
-                        </dl>
-                    </section>
+  const consumed = todaysLogs.filter((item) => item.is_consumed);
 
-                    <FoodSearch onResults={setResults} />
+  const totalCalories = consumed.reduce(
+    (sum, item) => sum + Number(item.calories || 0),
+    0
+  );
 
-                    {pageError && (
-                        <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-200">
-                            {pageError}
-                        </p>
-                    )}
+  const totalProtein = consumed.reduce(
+    (sum, item) => sum + Number(item.protein || 0),
+    0
+  );
 
-                    {results.length > 0 && (
-                        <section className="space-y-3" aria-label="USDA search results">
-                            <h2 className="text-xl font-semibold text-white">Search results</h2>
-                            {results.map((food) => (
-                                <FoodCard
-                                    key={food.fdcId}
-                                    food={food}
-                                    onView={setDetailsId}
-                                    onAdd={openAddForm}
-                                    adding={addingId === food.fdcId}
-                                />
-                            ))}
-                        </section>
-                    )}
+  const totalCarbs = consumed.reduce(
+    (sum, item) => sum + Number(item.carbs || 0),
+    0
+  );
 
-                    <section className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                                <h2 className="text-xl font-semibold text-white">Today's meals</h2>
-                                <p className="mt-1 text-sm text-slate-400">
-                                    Nutrition values are scaled to each logged quantity.
-                                </p>
-                            </div>
-                        </div>
+  const totalFat = consumed.reduce(
+    (sum, item) => sum + Number(item.fat || 0),
+    0
+  );
 
-                        {logsLoading ? (
-                            <p className="mt-5 text-slate-400">Loading today's food...</p>
-                        ) : foodLogs.length === 0 ? (
-                            <p className="mt-5 text-slate-400">No foods logged today. Search above to add a meal.</p>
-                        ) : (
-                            <div className="mt-5 space-y-5">
-                                {mealTypes.filter((meal) => foodLogs.some((item) => item.meal_type === meal)).map((meal) => (
-                                    <div key={meal}>
-                                        <h3 className="mb-2 font-semibold text-cyan-200">{meal}</h3>
-                                        <div className="space-y-2">
-                                            {foodLogs.filter((item) => item.meal_type === meal).map((item) => (
-                                                <article
-                                                    key={item.food_log_id}
-                                                    className="flex flex-col justify-between gap-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4 sm:flex-row sm:items-center"
-                                                >
-                                                    <div>
-                                                        <h4 className="font-medium text-white">{item.food_name}</h4>
-                                                        <p className="mt-1 text-sm text-slate-400">
-                                                            {item.quantity} {item.quantity_unit}
-                                                        </p>
-                                                    </div>
-                                                    <div className="text-sm text-slate-300 sm:text-right">
-                                                        <p className="font-semibold text-emerald-300">
-                                                            {formatNutrition(Number(item.calories) || 0)} kcal
-                                                        </p>
-                                                        <p className="mt-1">
-                                                            Protein {formatNutrition(Number(item.protein) || 0)} g
-                                                            {" · "}Carbs {formatNutrition(Number(item.carbs) || 0)} g
-                                                            {" · "}Fat {formatNutrition(Number(item.fat) || 0)} g
-                                                        </p>
-                                                    </div>
-                                                </article>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </section>
-                </main>
-            </div>
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <Navbar />
 
-            {detailsId !== null && (
-                <FoodDetails
-                    fdcId={detailsId}
-                    onClose={() => setDetailsId(null)}
-                    onAdd={prepareFood}
-                />
-            )}
+      <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:px-8">
+        <Sidebar />
 
-            {pendingFood && (
+        <main className="min-w-0 flex-1 space-y-6">
+          <header>
+            <p className="text-xs uppercase tracking-[0.32em] text-emerald-300">
+              USDA Nutrition
+            </p>
+            <h1 className="mt-3 text-3xl font-bold">Diet & Food Tracker</h1>
+            <p className="mt-2 text-slate-400">
+              Search food, log your portions and mark meals as eaten.
+            </p>
+          </header>
+
+          {error && (
+            <p role="alert" className="rounded-xl bg-red-950 p-3 text-red-200">
+              {error}
+            </p>
+          )}
+
+          {message && (
+            <p className="rounded-xl bg-emerald-950 p-3 text-emerald-200">
+              {message}
+            </p>
+          )}
+
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Calories", totalCalories, "kcal"],
+              ["Protein", totalProtein, "g"],
+              ["Carbs", totalCarbs, "g"],
+              ["Fat", totalFat, "g"],
+            ].map(([label, value, unit]) => (
+              <div
+                key={label}
+                className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
+              >
+                <p className="text-sm text-slate-400">{label} consumed today</p>
+                <p className="mt-2 text-2xl font-bold text-emerald-300">
+                  {Number(value).toFixed(1)} {unit}
+                </p>
+              </div>
+            ))}
+          </section>
+
+          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+            <h2 className="text-xl font-semibold">Search USDA foods</h2>
+
+            <form onSubmit={handleSearch} className="mt-4 flex gap-3">
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search chicken, oats, rice..."
+                className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
+              />
+              <button
+                disabled={loading}
+                className="rounded-xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 disabled:opacity-50"
+              >
+                {loading ? "Searching..." : "Search"}
+              </button>
+            </form>
+
+            <div className="mt-4 space-y-3">
+              {results.map((item) => (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/80 p-4"
-                    role="presentation"
+                  key={item.fdcId}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 p-4"
                 >
-                    <form
-                        onSubmit={handleAddToDiet}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="add-food-title"
-                        className="my-auto w-full max-w-lg rounded-3xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
-                    >
-                        <div className="flex items-start justify-between gap-4">
-                            <div>
-                                <p className="text-xs uppercase tracking-[0.25em] text-emerald-300">Add to diet</p>
-                                <h2 id="add-food-title" className="mt-2 text-2xl font-bold text-white">{pendingFood.description}</h2>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setPendingFood(null)}
-                                className="rounded-lg px-3 py-2 text-slate-300 hover:bg-slate-800"
-                            >
-                                Close
-                            </button>
-                        </div>
-                        <label className="mt-6 block text-sm font-medium text-slate-300" htmlFor="meal-type">
-                            Meal
-                        </label>
-                        <select
-                            id="meal-type"
-                            value={mealType}
-                            onChange={(event) => setMealType(event.target.value)}
-                            className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white"
-                        >
-                            {mealTypes.map((meal) => <option key={meal}>{meal}</option>)}
-                        </select>
-                        <label className="mt-4 block text-sm font-medium text-slate-300" htmlFor="food-quantity">
-                            Quantity ({quantityUnit})
-                        </label>
-                        <input
-                            id="food-quantity"
-                            type="number"
-                            min="0.01"
-                            step="any"
-                            required
-                            value={quantity}
-                            onChange={(event) => setQuantity(event.target.value)}
-                            className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white"
-                        />
-                        <p className="mt-2 text-sm text-slate-400">
-                            USDA nutrition is based on {formatNutrition(Number(pendingFood.servingSize) || 100)} {quantityUnit}.
-                        </p>
-                        {saving && <p className="mt-3 text-sm text-cyan-200">Saving food and adding meal...</p>}
-                        <button
-                            type="submit"
-                            disabled={saving}
-                            className="mt-6 w-full rounded-xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 disabled:opacity-60"
-                        >
-                            {saving ? "Adding..." : "Add to diet"}
-                        </button>
-                    </form>
+                  <div>
+                    <h3 className="font-medium">
+                      {item.description || "Unnamed food"}
+                    </h3>
+                    <p className="text-sm text-slate-400">
+                      USDA ID: {item.fdcId}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => selectFood(item)}
+                    className="rounded-lg bg-slate-700 px-4 py-2"
+                  >
+                    Select food
+                  </button>
                 </div>
-            )}
-        </div>
-    );
-}
+              ))}
+            </div>
+          </section>
 
-export default Diet;
+          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+            <h2 className="text-xl font-semibold">Add food to today's log</h2>
+
+            <form onSubmit={handleAddFood} className="mt-4 space-y-4">
+              <input
+                name="food_name"
+                value={food.food_name}
+                onChange={handleFieldChange}
+                placeholder="Select a USDA food above, or enter food name"
+                required
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
+              />
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <select
+                  name="meal_type"
+                  value={food.meal_type}
+                  onChange={handleFieldChange}
+                  className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
+                >
+                  <option>Breakfast</option>
+                  <option>Lunch</option>
+                  <option>Dinner</option>
+                  <option>Snack</option>
+                </select>
+
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={quantity}
+                  onChange={(event) => setQuantity(event.target.value)}
+                  placeholder="Serving size (g)"
+                  required
+                  className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
+                />
+
+                {[
+                  ["calories", "Calories per 100 g"],
+                  ["protein", "Protein per 100 g"],
+                  ["carbs", "Carbs per 100 g"],
+                  ["fat", "Fat per 100 g"],
+                ].map(([name, placeholder]) => (
+                  <input
+                    key={name}
+                    name={name}
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={food[name]}
+                    onChange={handleFieldChange}
+                    placeholder={placeholder}
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
+                  />
+                ))}
+              </div>
+
+              <p className="text-sm text-slate-400">
+                Check the USDA food data type and serving basis before using
+                the per-100 g scaling. Branded foods and other serving-based
+                records may need different handling.
+              </p>
+
+              <button
+                disabled={saving}
+                className="rounded-xl bg-gradient-to-r from-violet-400 to-cyan-400 px-6 py-3 font-semibold text-slate-950 disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Add to diet"}
+              </button>
+            </form>
+          </section>
+
+          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+            <h2 className="text-xl font-semibold">Today's food log</h2>
+
+            <div className="mt-4 space-y-3">
+              {todaysLogs.map((item) => (
+                <label
+                  key={item.food_log_id}
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-800 p-4"
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(item.is_consumed)}
+                    onChange={() => toggleConsumed(item)}
+                    className="h-5 w-5 accent-emerald-400"
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`font-semibold ${
+                        item.is_consumed
+                          ? "text-white"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {item.food_name}
+                    </p>
+                    <p className="text-sm text-slate-400">
+                      {item.meal_type} ·{" "}
+                      {item.quantity
+                        ? `${item.quantity} ${item.quantity_unit || "g"}`
+                        : "Portion not specified"}
+                    </p>
+                  </div>
+
+                  <p className="whitespace-nowrap text-emerald-300">
+                    {Number(item.calories).toFixed(0)} kcal
+                  </p>
+                </label>
+              ))}
+
+              {!todaysLogs.length && (
+                <p className="text-slate-400">
+                  No food logs recorded today.
+                </p>
+              )}
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+  );
+}
