@@ -6,7 +6,8 @@ import StatCard from "../components/StatCard";
 import WorkoutCard from "../components/WorkoutCard";
 import ActivityCard from "../components/ActivityChart";
 import ProgressChart from "../components/PorgressChart";
-import { getDietLogs } from "../services/foodApi";
+import { getDailySummary } from "../services/foodApi";
+
 
 const nutritionMetrics = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -19,18 +20,29 @@ const nutritionMetrics = [
 ];
 
 function Dashboard() {
-  const [dietLogs, setDietLogs] = useState([]);
+  const [nutrition, setNutrition] = useState(null);
+  const [dailyActivity, setDailyActivity] = useState(null);
   const [dietError, setDietError] = useState("");
 
   useEffect(() => {
-    getDietLogs(1)
-      .then(setDietLogs)
+    const today = new Date();
+    const date = [
+      today.getFullYear(),
+      String(today.getMonth() + 1).padStart(2, "0"),
+      String(today.getDate()).padStart(2, "0"),
+    ].join("-");
+
+    getDailySummary(1, date)
+      .then((summary) => {
+        setNutrition(summary.nutrition);
+        setDailyActivity(summary.activity);
+      })
       .catch((error) => setDietError(error.message));
   }, []);
 
   const nutritionTotals = nutritionMetrics.map((metric) => ({
     ...metric,
-    value: dietLogs.reduce((total, item) => total + (Number(item[metric.key]) || 0), 0),
+    value: Number(nutrition?.[metric.key]) || 0,
   }));
 
   const exercise = {
@@ -45,7 +57,7 @@ function Dashboard() {
     steps: 7500,
     water: 2.2,
     sleep: 7.5,
-    workout_minutes: 45,
+    workout_minutes: Number(dailyActivity?.workout_minutes) || 0,
   };
 
   const progressData = [
@@ -78,7 +90,12 @@ function Dashboard() {
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <StatCard title="Steps" value="7,500" unit="steps" accent="cyan" />
-            <StatCard title="Workout" value="45" unit="min" accent="violet" />
+            <StatCard
+              title="Workout"
+              value={Number(dailyActivity?.workout_minutes) || 0}
+              unit="min"
+              accent="violet"
+            />
             <StatCard title="Water" value="2.2" unit="L" accent="emerald" />
             <StatCard title="Sleep" value="7.5" unit="hrs" accent="amber" />
           </section>
