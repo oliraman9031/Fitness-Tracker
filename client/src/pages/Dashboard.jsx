@@ -32,7 +32,7 @@ function Dashboard() {
       String(today.getDate()).padStart(2, "0"),
     ].join("-");
 
-    getDailySummary(1, date)
+    getDailySummary(date)
       .then((summary) => {
         setNutrition(summary.nutrition);
         setDailyActivity(summary.activity);

@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import Navbar from "../components/NavBar";
 import Sidebar from "../components/Sidebar";
+import FoodSnapModal from "../components/food/FoodSnapModal";
 import {
   searchFoods,
   getFoodDetails,
@@ -9,8 +10,6 @@ import {
   getFoodLogs,
   updateConsumed,
 } from "../services/foodApi";
-
-const USER_ID = 1; // Prototype only; replace with authenticated user.
 
 const emptyFood = {
   food_name: "",
@@ -89,10 +88,11 @@ export default function Diet() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [quantity, setQuantity] = useState("100");
+  const [showFoodSnap, setShowFoodSnap] = useState(false);
 
   async function loadFoodLogs() {
     try {
-      const data = await getFoodLogs(USER_ID);
+      const data = await getFoodLogs();
       setFoodLogs(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message);
@@ -183,7 +183,6 @@ export default function Diet() {
       const factor = grams / 100;
 
       const payload = {
-        user_id: USER_ID,
         food_name: food.food_name,
         meal_type: food.meal_type,
         quantity: grams,
@@ -207,13 +206,31 @@ export default function Diet() {
     }
   }
 
+  async function handleSaveDetectedFood(detectedFood) {
+    setError("");
+    setMessage("");
+    const portionFactor = detectedFood.portion_grams / 100;
+    await saveFood({
+      food_name: detectedFood.food_name,
+      meal_type: detectedFood.meal_type,
+      quantity: detectedFood.portion_grams,
+      quantity_unit: "g",
+      calories: detectedFood.calories_per_100g * portionFactor,
+      protein: detectedFood.protein_per_100g * portionFactor,
+      carbs: detectedFood.carbs_per_100g * portionFactor,
+      fat: detectedFood.fat_per_100g * portionFactor,
+      is_consumed: true,
+    });
+    setMessage(`${detectedFood.food_name} added to today's food log.`);
+    await loadFoodLogs();
+  }
+
   async function toggleConsumed(item) {
     setError("");
 
     try {
       await updateConsumed(
         item.food_log_id,
-        USER_ID,
         !item.is_consumed
       );
       await loadFoodLogs();
@@ -305,19 +322,31 @@ export default function Diet() {
           <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
             <h2 className="text-xl font-semibold">Search USDA foods</h2>
 
-            <form onSubmit={handleSearch} className="mt-4 flex gap-3">
+            <form
+              onSubmit={handleSearch}
+              className="mt-4 flex flex-col gap-3 sm:flex-row"
+            >
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search chicken, oats, rice..."
                 className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3"
               />
-              <button
-                disabled={loading}
-                className="rounded-xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 disabled:opacity-50"
-              >
-                {loading ? "Searching..." : "Search"}
-              </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  disabled={loading}
+                  className="flex-1 rounded-xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 disabled:opacity-50 sm:flex-none"
+                >
+                  {loading ? "Searching..." : "Search"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFoodSnap(true)}
+                  className="flex-1 rounded-xl border border-violet-400/60 bg-violet-500/10 px-5 py-3 font-semibold text-violet-200 transition hover:bg-violet-500/20 sm:flex-none"
+                >
+                  Scan Food
+                </button>
+              </div>
             </form>
 
             <div className="mt-4 space-y-3">
@@ -467,6 +496,12 @@ export default function Diet() {
           </section>
         </main>
       </div>
+      {showFoodSnap && (
+        <FoodSnapModal
+          onClose={() => setShowFoodSnap(false)}
+          onSave={handleSaveDetectedFood}
+        />
+      )}
     </div>
   );
 }

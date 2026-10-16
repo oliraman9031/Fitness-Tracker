@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 
 function Register() {
   const navigate = useNavigate();
+  const { register } = useAuth();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -11,6 +13,7 @@ function Register() {
   });
 
   const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   function handleChange(e) {
     setFormData({
@@ -21,33 +24,16 @@ function Register() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    setSubmitting(true);
+    setMessage("");
 
     try {
-      const response = await fetch(
-        "http://localhost:5000/api/auth/register",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(formData)
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setMessage(data.message);
-        return;
-      }
-
-      setMessage("Registration successful!");
-
+      await register(formData.name, formData.email, formData.password);
       navigate("/dashboard");
-
-    } catch (error) {
-      console.error(error);
-      setMessage("Unable to connect to server.");
+    } catch (requestError) {
+      setMessage(requestError.message);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -72,6 +58,8 @@ function Register() {
             onChange={handleChange}
             className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-500"
             placeholder="Full name"
+            autoComplete="name"
+            maxLength={100}
             required
           />
 
@@ -82,6 +70,8 @@ function Register() {
             onChange={handleChange}
             className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-500"
             placeholder="Email"
+            autoComplete="email"
+            maxLength={254}
             required
           />
 
@@ -92,23 +82,31 @@ function Register() {
             onChange={handleChange}
             className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-500"
             placeholder="Password"
+            autoComplete="new-password"
+            minLength={12}
+            maxLength={72}
             required
           />
 
           <button
             type="submit"
+            disabled={submitting}
             className="w-full rounded-2xl bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-3 text-center font-semibold text-slate-950"
           >
-            Sign up
+            {submitting ? "Creating account..." : "Sign up"}
           </button>
 
         </form>
 
         {message && (
-          <p className="mt-4 text-center text-sm text-cyan-300">
+          <p role="alert" className="mt-4 text-center text-sm text-cyan-300">
             {message}
           </p>
         )}
+
+        <p className="mt-3 text-center text-xs text-slate-400">
+          Use a password with at least 12 characters.
+        </p>
 
         <p className="mt-5 text-center text-sm text-slate-300">
           Already have an account?{" "}

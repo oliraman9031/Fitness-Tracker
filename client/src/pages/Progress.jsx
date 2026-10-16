@@ -1,68 +1,40 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Navbar from "../components/NavBar";
 import Sidebar from "../components/Sidebar";
 import ProgressChart from "../components/PorgressChart";
+import { apiRequest } from "../services/api";
 
 function Progress() {
     const [weight, setWeight] = useState("");
     const [progressData, setProgressData] = useState([]);
+    const [error, setError] = useState("");
 
-    const userId = 1; // temporary; later get this from logged-in user
+    const loadProgress = useCallback(async () => {
+        const data = await apiRequest("/progress");
+        setProgressData(data.map((item) => ({
+            date: item.recorded_date,
+            weight: Number(item.weight)
+        })));
+    }, []);
 
     useEffect(() => {
-        fetch(`http://localhost:5000/api/progress/${userId}`)
-            .then((response) => response.json())
-            .then((data) => {
-                const formattedData = data.map((item) => ({
-                    date: item.recorded_date,
-                    weight: Number(item.weight)
-                }));
-
-                setProgressData(formattedData);
-            })
-            .catch((error) => {
-                console.error(error);
-            });
-    }, []);
+        loadProgress().catch((requestError) => setError(requestError.message));
+    }, [loadProgress]);
 
     async function handleSubmit(e) {
         e.preventDefault();
 
-        const response = await fetch(
-            "http://localhost:5000/api/progress",
-            {
+        setError("");
+        try {
+            await apiRequest("/progress", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    user_id: userId,
-                    weight: weight
-                })
-            }
-        );
-
-        const data = await response.json();
-
-        if (response.ok) {
+                body: JSON.stringify({ weight }),
+            });
             alert("Weight recorded successfully!");
             setWeight("");
-
-            // Refresh chart
-            const updatedResponse = await fetch(
-                `http://localhost:5000/api/progress/${userId}`
-            );
-
-            const updatedData = await updatedResponse.json();
-
-            setProgressData(
-                updatedData.map((item) => ({
-                    date: item.recorded_date,
-                    weight: Number(item.weight)
-                }))
-            );
-        } else {
-            alert(data.message);
+            await loadProgress();
+        } catch (requestError) {
+            setError(requestError.message);
         }
     }
 
@@ -86,6 +58,12 @@ function Progress() {
                         <h1 className="mt-3 text-3xl font-bold text-white">
                             Progress
                         </h1>
+
+                        {error && (
+                            <p role="alert" className="mt-4 text-sm text-rose-300">
+                                {error}
+                            </p>
+                        )}
 
                         <form onSubmit={handleSubmit} className="mt-6 flex gap-3">
 

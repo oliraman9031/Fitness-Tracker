@@ -9,8 +9,6 @@ import {
   saveMealPlan,
 } from "../services/foodApi";
 
-const USER_ID = 1; // Prototype only.
-
 function localDate() {
   const d = new Date();
   return [
@@ -45,7 +43,7 @@ export default function Workout() {
 
   async function loadWorkouts() {
     try {
-      const data = await getWorkouts(USER_ID);
+      const data = await getWorkouts();
       setWorkouts(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message);
@@ -63,7 +61,6 @@ export default function Workout() {
 
     try {
       const result = await getRecommendations({
-        user_id: USER_ID,
         ...preferences,
         date: localDate(),
       });
@@ -88,7 +85,6 @@ export default function Workout() {
     try {
       const completed = workout.completed;
       const result = await saveWorkout({
-        user_id: USER_ID,
         ...workout,
         duration_minutes: Number(workout.duration_minutes),
         calories_burned:
@@ -130,7 +126,6 @@ export default function Workout() {
 
     try {
       await saveMealPlan(
-        USER_ID,
         localDate(),
         recommendations.recommendations
       );
