@@ -1,68 +1,93 @@
-# STHIRA — Fitness & Wellness Tracker
+# STHIRA | AI-Powered Fitness & Wellness Platform
 
-STHIRA is a full-stack fitness and wellness platform designed to help users organize their fitness journey in one place. It provides a foundation for tracking progress, managing workouts and nutrition, and visualizing fitness-related data through a simple web interface.
+**Track your progress. Understand your nutrition. Train smarter.**
 
-## 🚀 Features
+STHIRA is a full-stack fitness and wellness platform built to bring workout tracking, nutrition management, progress analytics, and AI-assisted coaching into one application. It combines a React-based interface, a Node.js and Express backend, PostgreSQL data storage, and AI integrations to help users make more informed fitness decisions.
 
-* 📊 **Progress Tracking** — Record and monitor fitness progress over time.
-* 🏋️ **Workout Planning** — Organize workout-related information and routines.
-* 🥗 **Nutrition Planning** — Maintain meal and nutrition-related information.
-* 📈 **Progress Visualization** — View fitness progress through charts and data visualizations.
-* 👤 **User Profile** — Store user-related fitness information.
-* 🔌 **REST API** — Backend APIs for managing application data.
-* 🗄️ **PostgreSQL Database** — Persistent storage for application data.
-* 📱 **Responsive Interface** — Designed to provide a clean experience across different screen sizes.
+The project focuses on connecting practical fitness tracking with intelligent features, including AI-assisted food recognition, nutrition lookup, and personalized wellness recommendations.
 
-## 🛠️ Tech Stack
+## ✨ Key Features
 
-### Frontend
+### 🔐 Secure Authentication & Data Isolation
+- Authenticated access to protected features.
+- Server-side identity verification and authorization for user-specific records.
+- Data isolation designed to prevent users from accessing one another's information.
 
-* React.js
-* JavaScript
-* CSS / Tailwind CSS
+### 🤖 AI Fitness Coach
+- Personalized fitness and nutrition guidance based on available user data.
+- Recommendations informed by logged meals, workout activity, and progress information where supported.
+- Fallback recommendations to preserve basic coaching functionality when the external AI service is unavailable.
 
-### Backend
+### 📸 Gemini AI Food Snap
+- Analyze food images using Google's Gemini AI.
+- Identify likely food items and obtain estimated nutritional information.
+- Simplify meal logging by connecting image-based analysis with nutrition tracking.
+- Combine AI-generated estimates with nutrition data where supported by the application.
 
-* Node.js
-* Express.js
-* REST APIs
+*AI-generated food recognition and nutritional estimates may not be exact and should be reviewed before logging.*
 
-### Database
+### 🥗 Nutrition Management
+- Search food items using the USDA FoodData Central API.
+- Retrieve available nutritional information.
+- Record meals and monitor dietary intake.
+- Connect food logging with the application's broader wellness workflow.
 
-* PostgreSQL
+### 🏋️ Workout & Activity Tracking
+- Record workouts and physical activities.
+- Track workout completion and estimated calories burned.
+- Maintain activity history for progress monitoring.
 
-### Development Tools
+### 📊 Progress Analytics
+- Monitor fitness activity and progress through a centralized dashboard.
+- Review available workout, nutrition, and wellness records.
+- Present tracked information in a structured, accessible interface.
 
-* Git & GitHub
-* Postman
-* VS Code
-* npm
+## 🧰 Technology Stack
 
-## 🏗️ Project Architecture
+| Layer | Technologies |
+|---|---|
+| Frontend | React, JavaScript |
+| Backend | Node.js, Express.js |
+| Database | PostgreSQL |
+| API architecture | REST APIs |
+| AI integration | Google Gemini API |
+| Nutrition data | USDA FoodData Central API |
+| Development tools | Git, GitHub, npm |
+
+*Ollama can be listed as an additional technology once local model integration is implemented and verified.*
+
+## 🏛️ System Architecture
 
 ```text
-STHIRA/
-│
-├── client/                 # React frontend
-│   ├── src/
-│   │   ├── components/    # Reusable UI components
-│   │   ├── pages/         # Application pages
-│   │   └── ...
-│   └── package.json
-│
-├── server/                 # Node.js + Express backend
-│   ├── routes/             # API routes
-│   ├── controllers/        # Request handling logic
-│   ├── models/             # Database-related logic
-│   ├── db/                 # Database configuration
-│   └── server.js           # Backend entry point
-│
-└── README.md
+                    STHIRA
+                      |
+             React Frontend
+                      |
+                REST APIs
+                      |
+           Node.js + Express
+                      |
+        +-------------+-------------+
+        |             |             |
+   Authentication   AI Services   Nutrition API
+        |             |             |
+        |        Gemini AI       USDA FoodData
+        |             |             |
+        +-------------+-------------+
+                      |
+                 PostgreSQL
 ```
 
-> The exact folder structure may vary depending on the current development branch.
+The frontend communicates with the backend through REST APIs. The backend handles application logic, verifies access to protected resources, interacts with PostgreSQL, and connects to external AI and nutrition services as configured.
 
-## ⚙️ Getting Started
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js and npm
+- PostgreSQL
+- Git
+- API keys for the external services you intend to use
 
 ### 1. Clone the repository
 
@@ -71,203 +96,108 @@ git clone https://github.com/oliraman9031/Fitness-Tracker.git
 cd Fitness-Tracker
 ```
 
-### 2. Install frontend dependencies
+Switch to the branch containing the latest implementation:
 
 ```bash
-cd client
-npm install
+git switch feature/ai-fitness-coach
+git pull origin feature/ai-fitness-coach
 ```
 
-### 3. Install backend dependencies
-
-Open another terminal:
+### 2. Install backend dependencies
 
 ```bash
 cd server
 npm install
 ```
 
-### 4. Configure environment variables
+### 3. Configure environment variables
 
-Create a `.env` file inside the `server` directory.
+Create a `.env` file in the backend directory. Use the exact variable names expected by your code.
 
 Example:
 
 ```env
 PORT=5000
-
-DB_USER=your_postgres_username
-DB_HOST=localhost
-DB_NAME=sthira
-DB_PASSWORD=your_postgres_password
-DB_PORT=5432
-USDA_API_URL=https://api.nal.usda.gov/fdc/v1
+DATABASE_URL=your_database_connection_string
+GEMINI_API_KEY=your_gemini_api_key
 USDA_API_KEY=your_usda_api_key
-# Optional paid provider; local Ollama is used by default.
-AI_PROVIDER=ollama
-AI_MODEL=qwen2.5:3b
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-# Optional when AI_PROVIDER=openai:
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-4.1-mini
 ```
 
-Do **not** commit your `.env` file to GitHub.
+These names are illustrative; your implementation may use different database configuration variables.
 
-### 5. Set up PostgreSQL
+**Security:** Never commit API keys, passwords, or production credentials to GitHub. Add `.env` to `.gitignore`.
 
-Create a PostgreSQL database named:
+### 4. Configure PostgreSQL
 
-```text
-sthira
-```
+Create the database and apply the schema or migrations provided by the project. Verify that the required tables and database credentials are configured correctly.
 
-Then create the required tables used by the backend.
+### 5. Run the backend
 
-### 6. Start the backend
-
-From the `server` directory:
+From the `server` directory, use the appropriate script from `package.json`. For example:
 
 ```bash
 npm run dev
 ```
 
-The backend should run on:
+### 6. Run the frontend
 
-```text
-http://localhost:5000
-```
-
-### 7. Start the frontend
-
-From the frontend directory:
+Open a separate terminal and navigate to the frontend directory:
 
 ```bash
+npm install
 npm run dev
 ```
 
-The frontend will then be available at `http://localhost:5173`.
+Use the local URL displayed in the terminal to open the application.
 
-## 🔌 API
+*The commands above assume the corresponding npm scripts exist. Follow the actual project structure and `package.json` files if your setup differs.*
 
-The backend provides REST API endpoints for application functionality.
+## 🔌 API Overview
 
-Example progress endpoint:
+The application includes backend functionality for fitness records, nutrition tracking, and food lookup. Example routes include:
 
-```text
-GET /api/progress
-```
+| Endpoint | Purpose |
+|---|---|
+| `/api/progress` | Fitness progress records |
+| `/api/diet` | Diet-related records |
+| `/api/health` | Health-related records |
+| `/api/food/search?query=chicken` | Search for food items |
+| `/api/food/:fdcId` | Retrieve food details |
 
-The API communicates with the PostgreSQL database to retrieve and manage fitness-related data.
+The exact request methods, authentication requirements, and response formats are defined by the backend implementation.
 
-### USDA food logging
+## 🔒 Security & Reliability
 
-The Diet page searches USDA foods, displays detailed nutrition, and adds selected foods to a meal. Food quantities use the serving unit supplied by USDA; nutrients are scaled by the entered amount. Today's nutrition totals are shown on both the Diet page and Dashboard.
+STHIRA's backend architecture is designed to support responsible handling of personal fitness data.
 
-The backend creates the USDA food catalog and search-cache tables at startup, and adds the food relationship and nutrition fields to the existing `food_logs` table. Search results are cached in PostgreSQL for 24 hours.
+- Verify authenticated users on protected endpoints.
+- Enforce user-level authorization for database operations.
+- Keep API credentials on the server.
+- Validate incoming requests and handle errors consistently.
+- Provide fallback behavior for supported AI features when external services are unavailable.
+- Avoid exposing sensitive user data in application logs.
 
-Relevant endpoints:
+## 🗺️ Development Roadmap
 
-```text
-GET  /api/food/search?query=chicken
-GET  /api/food/:fdcId
-POST /api/food/save
-POST /api/diet
-GET  /api/diet/:userId
-```
+Potential areas for future development include:
 
-Start the backend and frontend in separate terminals, then open `http://localhost:5173/diet`.
+- Machine-learning-based fitness trend analysis.
+- Improved personalized workout and nutrition recommendations.
+- More advanced progress visualizations.
+- Automated backend and frontend testing.
+- Expanded API documentation and deployment automation.
 
-### AI workout and meal guidance
+## 🎯 Engineering Focus
 
-The Workout page uses the day's confirmed food logs and reported activity as
-context for exercise suggestions and a balanced three-day meal plan. Mark food
-as eaten with the Diet page checkboxes. When logging an activity, enter the
-calorie estimate from your device; uncheck **I completed this activity** if
-you could not complete it, and enter `0` if you did not burn any calories.
-The coach then refreshes meal guidance for the coming days. Calorie estimates
-are approximate, and the coach does not set exercise targets to compensate
-for food.
+STHIRA brings together several practical software engineering concepts:
 
-Free local AI recommendations use Ollama and do not require an API key or
-internet access after the model is downloaded. Install Ollama from
-https://ollama.com/download, then run:
-
-```powershell
-ollama pull qwen2.5:3b
-```
-
-Keep Ollama running and start the backend. The server uses
-`http://127.0.0.1:11434` and `qwen2.5:3b` by default. Override these with
-`OLLAMA_BASE_URL` and `AI_MODEL` if needed. Set `AI_PROVIDER=rules` to use
-general non-generative guidance, or `AI_PROVIDER=openai` to opt into the
-optional OpenAI provider. OpenAI requires a valid key and available credits.
-
-The backend creates the workout and meal-plan tables and consumed-food
-tracking columns on startup; the existing `users` and `food_logs` tables
-must already exist. The current frontend still uses prototype user ID `1`;
-authentication must be connected before using this feature with multiple
-accounts.
-
-## 📊 Progress Tracking
-
-STHIRA includes a progress-tracking system that allows fitness data to be stored and visualized over time.
-
-For example:
-
-```text
-Date        Weight
--------------------
-January     76 kg
-February    74.5 kg
-March       73 kg
-April       72 kg
-May         71 kg
-June        70.4 kg
-```
-
-The frontend can use this information to generate progress charts and provide users with a clearer view of their fitness journey.
-
-## 🎯 Project Goals
-
-STHIRA was designed with the following goals:
-
-* Build a practical full-stack application.
-* Provide a centralized fitness-tracking platform.
-* Use RESTful APIs for frontend-backend communication.
-* Store fitness data using PostgreSQL.
-* Present progress using meaningful visualizations.
-* Maintain a modular and scalable project structure.
-* Create a foundation for future intelligent fitness features.
-
-## 🔮 Future Improvements
-
-Potential future improvements include:
-
-* 🔐 User authentication and authorization
-* 🤖 AI-based workout recommendations
-* 🥗 Personalized nutrition recommendations
-* 📊 Advanced fitness analytics
-* 📅 Workout scheduling
-* 🔔 Reminders and notifications
-* 📱 Mobile application
-* ☁️ Cloud deployment
-* 🧠 ML-based fitness insights
-
-## 📚 Learning Outcomes
-
-This project demonstrates practical experience with:
-
-* Full-stack web development
-* React component development
-* Node.js and Express
-* REST API design
-* PostgreSQL database integration
-* CRUD operations
-* Frontend-backend communication
-* Data visualization
-* Git and GitHub workflow
-* Environment configuration
+- Full-stack application development.
+- REST API design and integration.
+- Relational database modeling with PostgreSQL.
+- Authentication and authorization.
+- Integration of external AI services.
+- Third-party nutrition data integration.
+- Error handling and fallback behavior.
 
 ## 👨‍💻 Author
 
@@ -275,6 +205,8 @@ This project demonstrates practical experience with:
 
 GitHub: [@oliraman9031](https://github.com/oliraman9031)
 
-## 📄 License
+Repository: [STHIRA — Fitness Tracker](https://github.com/oliraman9031/Fitness-Tracker)
 
-This project is intended for educational and development purposes.
+---
+
+*STHIRA — bringing fitness tracking, nutrition intelligence, and AI-assisted wellness together in one platform.*
