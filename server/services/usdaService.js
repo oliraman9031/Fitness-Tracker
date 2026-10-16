@@ -30,7 +30,8 @@ const searchFoods = async (query) => {
                 api_key: USDA_API_KEY,
                 query: normalizedQuery,
                 pageSize: 10
-            }
+            },
+            timeout: 15000
         }
     );
 
@@ -58,7 +59,8 @@ const getFoodDetails = async (fdcId) => {
         {
             params: {
                 api_key: USDA_API_KEY
-            }
+            },
+            timeout: 15000
         }
     );
 
@@ -97,6 +99,69 @@ const mapFoodDetails = (food) => {
     };
 };
 
+const matchFoodNutrition = async (name) => {
+    const normalizedName = name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (!normalizedName) return null;
+
+    const results = await searchFoods(name);
+    const foods = Array.isArray(results?.foods) ? results.foods : [];
+    const inputWords = new Set(normalizedName.split(" "));
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const food of foods) {
+        if (!["Foundation", "SR Legacy"].includes(food.dataType)) continue;
+        const description = typeof food.description === "string"
+            ? food.description
+            : "";
+        const normalizedDescription = description
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        const descriptionWords = new Set(normalizedDescription.split(" "));
+        const overlap = [...inputWords].filter((word) =>
+            descriptionWords.has(word)
+        ).length;
+        const score =
+            (2 * overlap) / (inputWords.size + descriptionWords.size);
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestMatch = food;
+        }
+    }
+
+    if (!bestMatch || bestScore < 0.8) return null;
+
+    const nutrients = new Map(
+        (Array.isArray(bestMatch.foodNutrients) ? bestMatch.foodNutrients : [])
+            .map((item) => [Number(item.nutrientId), Number(item.value)])
+    );
+    const nutrition = {
+        calories: nutrients.get(1008),
+        protein: nutrients.get(1003),
+        carbs: nutrients.get(1005),
+        fat: nutrients.get(1004)
+    };
+
+    if (Object.values(nutrition).some((value) => !Number.isFinite(value))) {
+        return null;
+    }
+
+    return {
+        name: bestMatch.description,
+        dataType: bestMatch.dataType,
+        fdcId: bestMatch.fdcId,
+        nutritionPer100g: nutrition
+    };
+};
+
 const getErrorStatus = (error) => {
     if (Number.isInteger(error.statusCode)) {
         return error.statusCode;
@@ -125,5 +190,6 @@ module.exports = {
     searchFoods,
     getFoodDetails,
     mapFoodDetails,
+    matchFoodNutrition,
     getErrorStatus
 };

@@ -4,7 +4,7 @@ const { isISODate } = require("../utils/dateValidation");
 const createFoodLog = async (req, res) => {
     try {
         if (req.body.food_id !== undefined) {
-            const { user_id, food_id, meal_type, quantity, quantity_unit, logged_date } = req.body;
+            const { food_id, meal_type, quantity, quantity_unit, logged_date } = req.body;
             const foodResult = await pool.query(
                 `SELECT *
                  FROM foods
@@ -37,7 +37,7 @@ const createFoodLog = async (req, res) => {
                         COALESCE($14::date, CURRENT_DATE))
                  RETURNING *`,
                 [
-                    Number(user_id),
+                    req.user.id,
                     food.id,
                     food.name,
                     meal_type,
@@ -61,7 +61,6 @@ const createFoodLog = async (req, res) => {
         }
 
         const {
-            user_id,
             food_name,
             meal_type,
             quantity,
@@ -81,7 +80,7 @@ const createFoodLog = async (req, res) => {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
             [
-                user_id,
+                req.user.id,
                 food_name,
                 meal_type || "Breakfast",
                 quantity || null,
@@ -104,11 +103,6 @@ const createFoodLog = async (req, res) => {
 
 const getFoodLogs = async (req, res) => {
     try {
-        const userId = Number(req.params.userId);
-        if (!Number.isSafeInteger(userId) || userId <= 0) {
-            return res.status(400).json({ message: "A valid user ID is required" });
-        }
-
         const logDate = req.query.date;
         if (logDate !== undefined && !isISODate(logDate)) {
             return res.status(400).json({ message: "A valid log date is required" });
@@ -120,14 +114,14 @@ const getFoodLogs = async (req, res) => {
                  FROM food_logs
                  WHERE user_id = $1 AND logged_date = CURRENT_DATE
                  ORDER BY created_at DESC NULLS LAST, food_log_id DESC`,
-                [userId]
+                [req.user.id]
             )
             : await pool.query(
                 `SELECT *
                  FROM food_logs
                  WHERE user_id = $1 AND logged_date = $2::date
                  ORDER BY created_at DESC NULLS LAST, food_log_id DESC`,
-                [userId, logDate]
+                [req.user.id, logDate]
             );
 
         res.json(result.rows);

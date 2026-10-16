@@ -2,12 +2,12 @@ const pool = require("../database");
 
 const addProgress = async (req, res) => {
     try {
-        const { user_id, weight } = req.body;
+        const { weight } = req.body;
         const result = await pool.query(
             `INSERT INTO progress_records (user_id, weight)
              VALUES ($1, $2)
              RETURNING *`,
-            [user_id, Number(weight)]
+            [req.user.id, Number(weight)]
         );
 
         res.status(201).json({
@@ -27,7 +27,7 @@ const getProgress = async (req, res) => {
              FROM progress_records
              WHERE user_id = $1
              ORDER BY recorded_date ASC`,
-            [req.params.userId]
+            [req.user.id]
         );
 
         res.json(result.rows);

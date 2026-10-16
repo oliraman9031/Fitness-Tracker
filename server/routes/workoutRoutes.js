@@ -8,7 +8,6 @@ const router = express.Router();
 router.post("/", async (req, res) => {
   try {
     const {
-      user_id,
       exercise_name,
       duration_minutes,
       calories_burned,
@@ -16,7 +15,7 @@ router.post("/", async (req, res) => {
       completed = true,
     } = req.body;
 
-    const userId = Number(user_id);
+    const userId = req.user.id;
     const duration = Number(duration_minutes);
 
     const calories =
@@ -33,12 +32,22 @@ router.post("/", async (req, res) => {
     }
 
     if (
-      !Number.isInteger(userId) ||
-      userId <= 0 ||
-      !exercise_name?.trim()
+      typeof exercise_name !== "string" ||
+      !exercise_name.trim() ||
+      exercise_name.trim().length > 150
     ) {
       return res.status(400).json({
-        message: "Valid user ID and exercise name are required.",
+        message: "Exercise name must be between 1 and 150 characters.",
+      });
+    }
+
+    if (
+      notes !== undefined &&
+      notes !== null &&
+      (typeof notes !== "string" || notes.length > 2000)
+    ) {
+      return res.status(400).json({
+        message: "Notes must be a string of at most 2000 characters.",
       });
     }
 
@@ -93,20 +102,14 @@ router.post("/", async (req, res) => {
 });
 
 // List a user's workout history.
-router.get("/:userId", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const userId = Number(req.params.userId);
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(400).json({ message: "Invalid user ID." });
-    }
-
     const result = await pool.query(
       `SELECT *
        FROM workout_logs
        WHERE user_id = $1
        ORDER BY created_at DESC, workout_id DESC`,
-      [userId]
+      [req.user.id]
     );
 
     return res.json(result.rows);

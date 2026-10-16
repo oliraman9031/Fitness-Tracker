@@ -1,17 +1,15 @@
 const { isISODate } = require("../utils/dateValidation");
 
 const validateDiet = (req, res, next) => {
-    const { user_id, food_name, calories, protein, carbs, fat } = req.body;
+    const { food_name, calories, protein, carbs, fat } = req.body;
 
     if (req.body.food_id !== undefined) {
-        const userId = Number(user_id);
         const foodId = Number(req.body.food_id);
         const quantity = Number(req.body.quantity);
         const mealTypes = ["Breakfast", "Lunch", "Dinner", "Snack"];
 
-        if (!Number.isSafeInteger(userId) || userId <= 0 ||
-            !Number.isSafeInteger(foodId) || foodId <= 0) {
-            return res.status(400).json({ message: "Valid user and food IDs are required" });
+        if (!Number.isSafeInteger(foodId) || foodId <= 0) {
+            return res.status(400).json({ message: "A valid food ID is required" });
         }
 
         if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -33,9 +31,9 @@ const validateDiet = (req, res, next) => {
         return next();
     }
 
-    if (!user_id || !food_name || calories === undefined || calories === "") {
+    if (!food_name || calories === undefined || calories === "") {
         return res.status(400).json({
-            message: "User ID, food name, and calories are required"
+            message: "Food name and calories are required"
         });
     }
 

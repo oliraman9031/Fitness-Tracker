@@ -1,15 +1,27 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const fs = require("fs");
 const pool = require("./database");
+const { requireAuth } = require("./middleware/authenticate");
 
 const app = express();
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-app.use(cors());
-app.use(express.json());
+const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    callback(null, !origin || allowedOrigins.includes(origin));
+  },
+  credentials: true,
+}));
+app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -18,19 +30,10 @@ const dietRoutes = require("./routes/dietRoutes");
 const pageRoutes = require("./routes/pageRoutes");
 const errorHandler = require("./middleware/errorHandler");
 const foodRoutes = require("./routes/foodRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 const workoutRoutes = require("./routes/workoutRoutes");
 const coachRoutes = require("./routes/coachRoutes");
-
-
-app.use("/api/workouts", workoutRoutes);
-app.use("/api/coach", coachRoutes);
-
-
-
-app.use("/api/progress", progressRoutes);
-app.use("/api/diet", dietRoutes);
-app.use("/", pageRoutes);
 
 app.get("/api/health", async (req, res) => {
   try {
@@ -42,14 +45,38 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
+app.use("/api", (req, res, next) => {
+  const origin = req.get("origin");
+  const isMutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
 
+  if (isMutation && origin && !allowedOrigins.includes(origin)) {
+    return res.status(403).json({ message: "Request origin is not allowed." });
+  }
+  return next();
+});
+app.use("/api/auth", authRoutes);
+app.use("/api", requireAuth(pool));
+app.use("/api/workouts", workoutRoutes);
+app.use("/api/coach", coachRoutes);
+app.use("/api/progress", progressRoutes);
+app.use("/api/diet", dietRoutes);
 app.use("/api/food", foodRoutes);
+app.use("/", pageRoutes);
 app.use(errorHandler);
 
-const PORT = 5000;
+const PORT = Number(process.env.PORT) || 5000;
 
 async function startServer() {
   try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        user_id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(254) NOT NULL,
+        password_hash TEXT NOT NULL
+      )
+    `);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS progress_records (
         progress_id SERIAL PRIMARY KEY,
@@ -75,6 +102,22 @@ async function startServer() {
         sugar NUMERIC,
         sodium NUMERIC,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS food_logs (
+        food_log_id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        food_name TEXT NOT NULL,
+        meal_type TEXT NOT NULL DEFAULT 'Breakfast',
+        quantity NUMERIC,
+        calories NUMERIC NOT NULL,
+        protein NUMERIC,
+        carbs NUMERIC,
+        fat NUMERIC,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        logged_date DATE NOT NULL DEFAULT CURRENT_DATE
       )
     `);
 
@@ -132,11 +175,38 @@ async function startServer() {
         ON meal_plans (user_id, plan_date)
     `);
 
-    await pool.query(`
-      INSERT INTO users (user_id, name, email, password_hash)
-      VALUES (1, 'Prototype User', 'prototype@sthira.local', 'prototype-only')
-      ON CONFLICT (user_id) DO NOTHING
-    `);
+    const authenticationMigration = fs.readFileSync(
+      path.join(__dirname, "migrations", "authentication.sql"),
+      "utf8"
+    );
+    const migrationClient = await pool.connect();
+    try {
+      await migrationClient.query("BEGIN");
+      await migrationClient.query("SELECT pg_advisory_xact_lock(74520318)");
+      await migrationClient.query(`
+        CREATE TABLE IF NOT EXISTS app_migrations (
+          name TEXT PRIMARY KEY,
+          applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      const appliedMigration = await migrationClient.query(
+        "SELECT 1 FROM app_migrations WHERE name = $1",
+        ["authentication"]
+      );
+      if (!appliedMigration.rowCount) {
+        await migrationClient.query(authenticationMigration);
+        await migrationClient.query(
+          "INSERT INTO app_migrations (name) VALUES ($1)",
+          ["authentication"]
+        );
+      }
+      await migrationClient.query("COMMIT");
+    } catch (error) {
+      await migrationClient.query("ROLLBACK");
+      throw error;
+    } finally {
+      migrationClient.release();
+    }
 
     const result = await pool.query("SELECT NOW()");
     console.log("Database connected:", result.rows);
@@ -150,4 +220,8 @@ async function startServer() {
   }
 }
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app, startServer };
