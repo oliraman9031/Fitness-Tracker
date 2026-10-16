@@ -1,13 +1,17 @@
 const validateProgress = (req, res, next) => {
-    const { user_id, weight } = req.body;
+    const { weight } = req.body;
 
-    if (!user_id || weight === undefined || weight === "") {
-        return res.status(400).json({ message: "User ID and weight are required" });
+    if (weight === undefined || weight === "") {
+        return res.status(400).json({ message: "Weight is required" });
+    }
+
+    if (typeof weight !== "number" && typeof weight !== "string") {
+        return res.status(400).json({ message: "Weight must be a positive number" });
     }
 
     const numericWeight = Number(weight);
-    if (!Number.isFinite(numericWeight) || numericWeight <= 0) {
-        return res.status(400).json({ message: "Weight must be a positive number" });
+    if (!Number.isFinite(numericWeight) || numericWeight <= 0 || numericWeight > 9999.99) {
+        return res.status(400).json({ message: "Weight must be between 0 and 9999.99" });
     }
 
     next();

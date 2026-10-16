@@ -2,6 +2,7 @@
 const express = require("express");
 const OpenAI = require("openai");
 const pool = require("../database");
+const { isISODate } = require("../utils/dateValidation");
 
 const router = express.Router();
 
@@ -124,20 +125,18 @@ async function requestOllamaRecommendations(context) {
 }
 
 function validDate(date) {
-  return typeof date === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(date) &&
-    !Number.isNaN(Date.parse(`${date}T00:00:00Z`));
+  return isISODate(date);
 }
 
 // Get a combined daily summary.
-router.get("/daily-summary/:userId", async (req, res) => {
+router.get("/daily-summary", async (req, res) => {
   try {
-    const userId = Number(req.params.userId);
+    const userId = req.user.id;
     const date = req.query.date || new Date().toISOString().slice(0, 10);
 
-    if (!Number.isInteger(userId) || userId <= 0 || !validDate(date)) {
+    if (!validDate(date)) {
       return res.status(400).json({
-        message: "Valid user ID and date (YYYY-MM-DD) are required.",
+        message: "A valid date (YYYY-MM-DD) is required.",
       });
     }
 
@@ -214,7 +213,6 @@ router.get("/daily-summary/:userId", async (req, res) => {
 router.post("/recommendations", async (req, res) => {
   try {
     const {
-      user_id,
       available_time_minutes = 20,
       preferred_activities = ["walking", "mobility"],
       diet_preference = "no preference",
@@ -222,19 +220,17 @@ router.post("/recommendations", async (req, res) => {
       date = new Date().toISOString().slice(0, 10),
     } = req.body;
 
-    const userId = Number(user_id);
+    const userId = req.user.id;
     const availableTime = Number(available_time_minutes);
 
     if (
-      !Number.isInteger(userId) ||
-      userId <= 0 ||
       !Number.isInteger(availableTime) ||
       availableTime < 5 ||
       availableTime > 180 ||
       !validDate(date)
     ) {
       return res.status(400).json({
-        message: "Valid user ID, date and available time (5–180 minutes) are required.",
+        message: "A valid date and available time (5–180 minutes) are required.",
       });
     }
 
@@ -292,7 +288,9 @@ router.post("/recommendations", async (req, res) => {
       availableTimeMinutes: availableTime,
       fitnessGoal: String(fitness_goal).slice(0, 100),
       preferredActivities: Array.isArray(preferred_activities)
-        ? preferred_activities.slice(0, 10).map(String)
+        ? preferred_activities.slice(0, 10).map((activity) =>
+            String(activity).slice(0, 100)
+          )
         : [],
       dietPreference: String(diet_preference).slice(0, 100),
       nutrition: nutrition.rows[0],
@@ -447,18 +445,16 @@ router.post("/recommendations", async (req, res) => {
 // Save a three-day meal plan for a date.
 router.post("/meal-plan", async (req, res) => {
   try {
-    const { user_id, date, plan_data } = req.body;
-    const userId = Number(user_id);
+    const { date, plan_data } = req.body;
+    const userId = req.user.id;
 
     if (
-      !Number.isInteger(userId) ||
-      userId <= 0 ||
       !validDate(date) ||
       !plan_data ||
       !Array.isArray(plan_data.threeDayMealPlan)
     ) {
       return res.status(400).json({
-        message: "Valid user ID, date and meal plan are required.",
+        message: "A valid date and meal plan are required.",
       });
     }
 
@@ -485,18 +481,16 @@ router.post("/meal-plan", async (req, res) => {
 });
 
 // Retrieve the saved plan for a date.
-router.get("/meal-plan/:userId", async (req, res) => {
+router.get("/meal-plan", async (req, res) => {
   try {
-    const userId = Number(req.params.userId);
+    const userId = req.user.id;
     const date = req.query.date;
 
     if (
-      !Number.isInteger(userId) ||
-      userId <= 0 ||
       !validDate(date)
     ) {
       return res.status(400).json({
-        message: "Valid user ID and date are required.",
+        message: "A valid date is required.",
       });
     }
 

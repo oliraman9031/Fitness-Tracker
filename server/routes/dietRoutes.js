@@ -1,6 +1,7 @@
 
 const express = require("express");
 const pool = require("../database");
+const { isISODate } = require("../utils/dateValidation");
 
 const router = express.Router();
 
@@ -27,7 +28,6 @@ const optionalNumber = (value) => {
 router.post("/", async (req, res) => {
   try {
     const {
-      user_id,
       food_name,
       meal_type,
       quantity,
@@ -39,26 +39,29 @@ router.post("/", async (req, res) => {
       is_consumed = true,
     } = req.body;
 
-    const numericUserId = Number(user_id);
+    const numericUserId = req.user.id;
     const numericQuantity = optionalNumber(quantity);
     const numericCalories = Number(calories);
     const numericProtein = optionalNumber(protein);
     const numericCarbs = optionalNumber(carbs);
     const numericFat = optionalNumber(fat);
+    const mealTypes = ["Breakfast", "Lunch", "Dinner", "Snack"];
 
     if (
-      !Number.isInteger(numericUserId) ||
-      numericUserId <= 0 ||
-      !food_name?.trim() ||
+      typeof food_name !== "string" ||
+      !food_name.trim() ||
+      food_name.trim().length > 500 ||
+      !mealTypes.includes(meal_type || "Breakfast") ||
       typeof quantity_unit !== "string" ||
       !quantity_unit.trim() ||
+      quantity_unit.trim().length > 30 ||
       Number.isNaN(numericQuantity) ||
       (numericQuantity !== null && numericQuantity <= 0) ||
       calories === undefined ||
       calories === ""
     ) {
       return res.status(400).json({
-        message: "Valid user ID, food name and calories are required.",
+        message: "Valid food name and calories are required.",
       });
     }
 
@@ -114,20 +117,14 @@ router.post("/", async (req, res) => {
 });
 
 // Get all food logs for a user.
-router.get("/:userId", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const userId = Number(req.params.userId);
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(400).json({ message: "Invalid user ID." });
-    }
-
     const result = await pool.query(
       `SELECT *
        FROM food_logs
        WHERE user_id = $1
        ORDER BY created_at DESC NULLS LAST, food_log_id DESC`,
-      [userId]
+      [req.user.id]
     );
 
     return res.json(result.rows);
@@ -143,18 +140,16 @@ router.get("/:userId", async (req, res) => {
 router.patch("/:foodLogId/consumed", async (req, res) => {
   try {
     const foodLogId = Number(req.params.foodLogId);
-    const { user_id, is_consumed } = req.body;
-    const userId = Number(user_id);
+    const userId = req.user.id;
+    const { is_consumed } = req.body;
 
     if (
       !Number.isInteger(foodLogId) ||
       foodLogId <= 0 ||
-      !Number.isInteger(userId) ||
-      userId <= 0 ||
       typeof is_consumed !== "boolean"
     ) {
       return res.status(400).json({
-        message: "Valid food log ID, user ID and consumed status are required.",
+        message: "Valid food log ID and consumed status are required.",
       });
     }
 
@@ -182,19 +177,16 @@ router.patch("/:foodLogId/consumed", async (req, res) => {
 
 // Get nutrition totals for one date.
 // Defaults to today's date according to the server's local date.
-router.get("/:userId/summary/daily", async (req, res) => {
+router.get("/summary/daily", async (req, res) => {
   try {
-    const userId = Number(req.params.userId);
+    const userId = req.user.id;
     const date = req.query.date;
 
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(400).json({ message: "Invalid user ID." });
+    if (date !== undefined && !isISODate(date)) {
+      return res.status(400).json({ message: "A valid log date is required." });
     }
 
-    const dateValue =
-      typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)
-        ? date
-        : new Date().toISOString().slice(0, 10);
+    const dateValue = date || new Date().toISOString().slice(0, 10);
 
     const result = await pool.query(
       `SELECT
