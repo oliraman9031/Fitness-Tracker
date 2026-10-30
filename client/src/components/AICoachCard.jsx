@@ -2,8 +2,6 @@
 import React, { useState } from "react";
 import { getRecommendations } from "../services/foodApi";
 
-const USER_ID = 1; // Prototype only.
-
 export default function AICoachCard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -22,7 +20,6 @@ export default function AICoachCard() {
       ].join("-");
 
       const result = await getRecommendations({
-        user_id: USER_ID,
         date,
         available_time_minutes: 20,
         fitness_goal: "general fitness",

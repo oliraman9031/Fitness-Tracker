@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { registerAccount } from "../services/foodApi";
 
 function Register() {
   const navigate = useNavigate();
@@ -23,31 +24,13 @@ function Register() {
     e.preventDefault();
 
     try {
-      const response = await fetch(
-        "http://localhost:5000/api/auth/register",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(formData)
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setMessage(data.message);
-        return;
-      }
+      await registerAccount(formData);
 
       setMessage("Registration successful!");
-
       navigate("/dashboard");
 
     } catch (error) {
-      console.error(error);
-      setMessage("Unable to connect to server.");
+      setMessage(error.message);
     }
   }
 
@@ -91,7 +74,8 @@ function Register() {
             value={formData.password}
             onChange={handleChange}
             className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none placeholder:text-slate-500"
-            placeholder="Password"
+            placeholder="Password (at least 12 characters)"
+            minLength={12}
             required
           />
 

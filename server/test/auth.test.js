@@ -14,13 +14,23 @@ const sessions = new Map();
 const foodLogs = [];
 const workouts = [];
 const progress = [];
+const wellnessLogs = [];
+const mealRecommendations = [];
+const waterEntries = [];
+const activityEntries = [];
+const sleepLogs = [];
+const habitSchedules = [];
 let nextUserId = 1;
 let nextFoodLogId = 1;
 let nextWorkoutId = 1;
 let nextProgressId = 1;
+let nextMealId = 1;
+let nextWaterId = 1;
+let nextActivityId = 1;
 let server;
 let baseUrl;
 const originalQuery = pool.query;
+const originalConnect = pool.connect;
 const nativeFetch = global.fetch;
 const originalGeminiKey = process.env.GEMINI_API_KEY;
 let geminiMode = "success";
@@ -70,6 +80,62 @@ pool.query = async (query, values = []) => {
   if (sql.startsWith("select user_id, name, email, password_hash from users")) {
     const user = users.find((item) => item.email === values[0]);
     return rows(user ? [user] : []);
+  }
+
+  if (sql.startsWith("update users set password_hash")) {
+    const user = users.find(
+      (item) => item.user_id === values[1] && item.password_hash === values[2]
+    );
+    if (user) user.password_hash = values[0];
+    return rows(user ? [user] : []);
+  }
+
+  if (sql.startsWith("select name, height_cm, hydration_goal_ml")) {
+    const user = users.find((item) => item.user_id === values[0]);
+    return rows(user ? [{
+      name: user.name,
+      height_cm: null,
+      hydration_goal_ml: 2000,
+      steps_goal: 8000,
+      profile_preferences: {},
+    }] : []);
+  }
+
+  if (sql.startsWith("select height_cm, hydration_goal_ml")) {
+    return rows([{
+      height_cm: null,
+      hydration_goal_ml: 2000,
+      steps_goal: 8000,
+      profile_preferences: {},
+    }]);
+  }
+
+  if (sql.startsWith("select steps_goal, hydration_goal_ml")) {
+    return rows([{ steps_goal: 8000, hydration_goal_ml: 2000 }]);
+  }
+
+  if (sql.startsWith("select hydration_goal_ml")) {
+    return rows([{ hydration_goal_ml: 2000 }]);
+  }
+
+  if (sql.startsWith("select habit_key, weekdays")) {
+    return rows(habitSchedules.filter((item) => item.user_id === values[0]));
+  }
+
+  if (sql.startsWith("insert into scheduled_habits")) {
+    const current = habitSchedules.find(
+      (item) => item.user_id === values[0] && item.habit_key === values[1]
+    );
+    const schedule = {
+      user_id: values[0],
+      habit_key: values[1],
+      weekdays: values[2],
+      target_value: values[3],
+      enabled: values[4],
+    };
+    if (current) Object.assign(current, schedule);
+    else habitSchedules.push(schedule);
+    return rows([]);
   }
 
   if (sql.startsWith("insert into auth_sessions")) {
@@ -179,6 +245,213 @@ pool.query = async (query, values = []) => {
     return rows([entry]);
   }
 
+  if (sql.startsWith("insert into daily_wellness_logs")) {
+    let log = wellnessLogs.find(
+      (item) => item.user_id === values[0] && item.activity_date === values[1]
+    );
+    if (!log) {
+      log = { user_id: values[0], activity_date: values[1] };
+      wellnessLogs.push(log);
+    }
+    Object.assign(log, {
+      steps: values[2],
+      water_liters: values[3],
+      sleep_hours: values[4],
+      recovery_rating: values[5],
+    });
+    const { user_id, ...publicLog } = log;
+    return rows([publicLog]);
+  }
+
+  if (sql.startsWith("insert into recommended_meals")) {
+    let meal = mealRecommendations.find((item) =>
+      item.user_id === values[0] &&
+      item.recommendation_date === values[1] &&
+      item.meal_type === values[2]
+    );
+    if (!meal) {
+      meal = {
+        recommended_meal_id: nextMealId++,
+        user_id: values[0],
+        recommendation_date: values[1],
+        meal_type: values[2],
+        status: "planned",
+      };
+      mealRecommendations.push(meal);
+    }
+    meal.food_name = values[3];
+    return rows([{ ...meal }]);
+  }
+
+  if (sql.startsWith("select recommended_meal_id")) {
+    return rows(mealRecommendations.filter(
+      (item) => item.user_id === values[0] && item.recommendation_date === values[1]
+    ));
+  }
+
+  if (sql.startsWith("update recommended_meals")) {
+    const meal = mealRecommendations.find(
+      (item) => item.recommended_meal_id === values[0] && item.user_id === values[1]
+    );
+    if (!meal) return rows([]);
+    meal.status = values[2];
+    meal.completed_at = meal.status === "completed" ? new Date().toISOString() : null;
+    return rows([{ ...meal }]);
+  }
+
+  if (sql.startsWith("with updated_food as")) {
+    const meal = mealRecommendations.find(
+      (item) => item.recommended_meal_id === values[0] && item.user_id === values[1]
+    );
+    if (!meal) return rows([]);
+    meal.status = "planned";
+    meal.completed_at = null;
+    meal.food_log_id = null;
+    return rows([{ ...meal }]);
+  }
+
+  if (sql.startsWith("with target as")) {
+    const meal = mealRecommendations.find(
+      (item) => item.recommended_meal_id === values[0] && item.user_id === values[1]
+    );
+    if (!meal) return rows([]);
+    const foodLog = {
+      food_log_id: nextFoodLogId++,
+      user_id: values[1],
+      food_name: values[2],
+      meal_type: values[3],
+      quantity: values[4],
+      quantity_unit: values[5],
+      calories: values[6],
+      protein: values[7],
+      carbs: values[8],
+      fat: values[9],
+      is_consumed: true,
+      created_at: new Date().toISOString(),
+    };
+    foodLogs.push(foodLog);
+    Object.assign(meal, {
+      meal_type: values[3],
+      food_name: values[2],
+      calories: values[6],
+      protein: values[7],
+      carbs: values[8],
+      fat: values[9],
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      food_log_id: foodLog.food_log_id,
+    });
+    return rows([{ ...meal }]);
+  }
+
+  if (sql.includes("from recommended_meals")) {
+    return rows(mealRecommendations.filter((item) => item.user_id === values[0]));
+  }
+
+  if (sql.startsWith("insert into daily_water_entries")) {
+    const entry = {
+      water_entry_id: nextWaterId++,
+      user_id: values[0],
+      entry_date: values[1],
+      amount_ml: values[2],
+      created_at: new Date().toISOString(),
+    };
+    waterEntries.push(entry);
+    return rows([entry]);
+  }
+
+  if (sql.startsWith("delete from daily_water_entries")) {
+    const index = waterEntries.findIndex(
+      (item) => item.water_entry_id === values[0] && item.user_id === values[1]
+    );
+    if (index < 0) return rows([]);
+    return rows([waterEntries.splice(index, 1)[0]]);
+  }
+
+  if (sql.includes("from daily_water_entries")) {
+    const matches = waterEntries.filter((item) => item.user_id === values[0]);
+    if (sql.includes("sum(amount_ml)")) {
+      return rows(matches.reduce((result, item) => {
+        const key = item.entry_date;
+        const existing = result.find((row) => row.entry_date === key);
+        if (existing) existing.total_ml += item.amount_ml;
+        else result.push({ entry_date: key, total_ml: item.amount_ml });
+        return result;
+      }, []));
+    }
+    return rows(matches);
+  }
+
+  if (sql.startsWith("insert into daily_activity_entries")) {
+    const entry = {
+      activity_entry_id: nextActivityId++,
+      user_id: values[0],
+      activity_date: values[1],
+      activity_type: values[2],
+      steps: values[3],
+      distance_m: values[4],
+      active_minutes: values[5],
+      data_source: values[6],
+      created_at: new Date().toISOString(),
+    };
+    activityEntries.push(entry);
+    return rows([entry]);
+  }
+
+  if (sql.startsWith("delete from daily_activity_entries")) {
+    const index = activityEntries.findIndex(
+      (item) => item.activity_entry_id === values[0] && item.user_id === values[1]
+    );
+    if (index < 0) return rows([]);
+    return rows([activityEntries.splice(index, 1)[0]]);
+  }
+
+  if (sql.includes("from daily_activity_entries")) {
+    const matches = activityEntries.filter((item) => item.user_id === values[0]);
+    return rows(matches);
+  }
+
+  if (sql.startsWith("insert into sleep_logs")) {
+    const log = {
+      sleep_log_id: 1,
+      user_id: values[0],
+      sleep_date: values[1],
+      sleep_start: values[2],
+      wake_time: values[3],
+      duration_minutes: values[4],
+      sleep_quality: values[5],
+      fatigue_rating: values[6],
+      soreness_rating: values[7],
+    };
+    const index = sleepLogs.findIndex(
+      (item) => item.user_id === log.user_id && item.sleep_date === log.sleep_date
+    );
+    if (index >= 0) sleepLogs[index] = log;
+    else sleepLogs.push(log);
+    return rows([log]);
+  }
+
+  if (sql.includes("from sleep_logs")) {
+    return rows(sleepLogs.filter((item) => item.user_id === values[0]));
+  }
+
+  if (sql.startsWith("insert into recovery_records")) {
+    return rows([]);
+  }
+
+  if (sql.includes("from recovery_records")) {
+    return rows([]);
+  }
+
+  if (sql.includes("from daily_wellness_logs")) {
+    const log = wellnessLogs.find(
+      (item) => item.user_id === values[0] && item.activity_date === values[1]
+    );
+    if (!log) return rows([]);
+    const { user_id, ...publicLog } = log;
+    return rows([publicLog]);
+  }
+
   if (sql.includes("from progress_records")) {
     return rows(progress.filter((item) => item.user_id === values[0]));
   }
@@ -187,6 +460,13 @@ pool.query = async (query, values = []) => {
 };
 
 before(async () => {
+  pool.connect = async () => ({
+    query: async (sql, values) => {
+      if (/^(begin|commit|rollback)$/i.test(sql.trim())) return rows([]);
+      return pool.query(sql, values);
+    },
+    release() {},
+  });
   process.env.GEMINI_API_KEY = "test-gemini-api-key";
   global.fetch = async (input, options) => {
     const url = String(input);
@@ -229,6 +509,7 @@ before(async () => {
 
 after(async () => {
   pool.query = originalQuery;
+  pool.connect = originalConnect;
   global.fetch = nativeFetch;
   if (originalGeminiKey === undefined) {
     delete process.env.GEMINI_API_KEY;
@@ -454,6 +735,289 @@ test("registration validates input and rejects duplicate emails", async () => {
     body: JSON.stringify({ email, password: "StrongPassword123!" }),
   });
   assert.equal(invalidOrigin.response.status, 403);
+});
+
+test("legacy plaintext password is upgraded after successful login", async () => {
+  const email = `legacy-${Date.now()}@example.test`;
+  const password = "LegacyPassword123";
+  const user = {
+    user_id: nextUserId++,
+    name: "Legacy User",
+    email,
+    password_hash: password,
+  };
+  users.push(user);
+
+  const result = await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.user.email, email);
+  assert.match(user.password_hash, /^\$2[aby]\$/);
+
+  const rejected = await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password: "wrong-password" }),
+  });
+  assert.equal(rejected.response.status, 401);
+});
+
+test("local Vite origins can access the API while unrelated origins are rejected", async () => {
+  const localOrigin = "http://127.0.0.1:5174";
+  const allowed = await request("/api/auth/me", {
+    headers: { Origin: localOrigin },
+  });
+  assert.equal(allowed.response.status, 401);
+  assert.equal(
+    allowed.response.headers.get("access-control-allow-origin"),
+    localOrigin
+  );
+  assert.equal(
+    allowed.response.headers.get("access-control-allow-credentials"),
+    "true"
+  );
+
+  const rejected = await request("/api/auth/login", {
+    method: "POST",
+    headers: { Origin: "https://unrelated.example" },
+    body: JSON.stringify({ email: "test@example.test", password: "password" }),
+  });
+  assert.equal(rejected.response.status, 403);
+});
+
+test("daily wellness check-ins save, update, and stay scoped to the session", async () => {
+  const first = await register(
+    "Wellness User",
+    `wellness-${Date.now()}@example.test`
+  );
+  const second = await register(
+    "Other Wellness User",
+    `wellness-other-${Date.now()}@example.test`
+  );
+  const date = new Date().toISOString().slice(0, 10);
+  const checkIn = {
+    activity_date: date,
+    steps: 8200,
+    water_liters: 2.4,
+    sleep_hours: 7.5,
+    recovery_rating: 4,
+  };
+
+  const anonymous = await request(`/api/wellness/daily?date=${date}`);
+  assert.equal(anonymous.response.status, 401);
+
+  const saved = await request("/api/wellness/daily", {
+    method: "PUT",
+    cookie: first.cookie,
+    body: JSON.stringify(checkIn),
+  });
+  assert.equal(saved.response.status, 200);
+  assert.equal(saved.data.log.steps, 8200);
+
+  const updated = await request("/api/wellness/daily", {
+    method: "PUT",
+    cookie: first.cookie,
+    body: JSON.stringify({ ...checkIn, steps: 9100, recovery_rating: 3 }),
+  });
+  assert.equal(updated.response.status, 200);
+  assert.equal(updated.data.log.steps, 9100);
+  assert.equal(wellnessLogs.length, 1);
+
+  const ownLog = await request(`/api/wellness/daily?date=${date}`, {
+    cookie: first.cookie,
+  });
+  assert.equal(ownLog.data.log.recovery_rating, 3);
+  const otherLog = await request(`/api/wellness/daily?date=${date}`, {
+    cookie: second.cookie,
+  });
+  assert.equal(otherLog.data.log, null);
+
+  const summary = await request(`/api/coach/daily-summary?date=${date}`, {
+    cookie: first.cookie,
+  });
+  assert.equal(summary.response.status, 200);
+  assert.equal(summary.data.date, date);
+  assert.equal(summary.data.activity.workout_minutes, "0");
+
+  const invalid = await request("/api/wellness/daily", {
+    method: "PUT",
+    cookie: first.cookie,
+    body: JSON.stringify({ ...checkIn, water_liters: 21 }),
+  });
+  assert.equal(invalid.response.status, 400);
+});
+
+test("meal recommendations stay separate from actual food until an explicit USDA replacement", async () => {
+  const first = await register(
+    "Meal Check-in User",
+    `meal-checkin-${Date.now()}@example.test`
+  );
+  const second = await register(
+    "Other Meal User",
+    `meal-other-${Date.now()}@example.test`
+  );
+  const date = new Date().toISOString().slice(0, 10);
+  const initialFoodLogCount = foodLogs.length;
+  const saved = await request("/api/diet/recommendations", {
+    method: "PUT",
+    cookie: first.cookie,
+    body: JSON.stringify({
+      date,
+      meals: [
+        { meal_type: "Breakfast", food_name: "Balanced breakfast suggestion" },
+      ],
+    }),
+  });
+  assert.equal(saved.response.status, 200);
+  const recommendation = saved.data.meals[0];
+  assert.equal(recommendation.status, "planned");
+  assert.equal(foodLogs.length, initialFoodLogCount);
+
+  const checkedIn = await request(
+    `/api/diet/recommendations/${recommendation.recommended_meal_id}`,
+    {
+      method: "PATCH",
+      cookie: first.cookie,
+      body: JSON.stringify({ status: "completed" }),
+    }
+  );
+  assert.equal(checkedIn.response.status, 200);
+  assert.equal(checkedIn.data.meal.status, "completed");
+  assert.equal(foodLogs.length, initialFoodLogCount);
+
+  const undone = await request(
+    `/api/diet/recommendations/${recommendation.recommended_meal_id}`,
+    {
+      method: "PATCH",
+      cookie: first.cookie,
+      body: JSON.stringify({ status: "planned" }),
+    }
+  );
+  assert.equal(undone.response.status, 200);
+  assert.equal(undone.data.meal.status, "planned");
+
+  const replacement = await request(
+    `/api/diet/recommendations/${recommendation.recommended_meal_id}`,
+    {
+      method: "PATCH",
+      cookie: first.cookie,
+      body: JSON.stringify({
+        status: "completed",
+        actual_food: {
+          food_name: "Oats",
+          meal_type: "Breakfast",
+          fdc_id: 12345,
+          quantity: 100,
+          quantity_unit: "g",
+          calories: 380,
+          protein: 13,
+          carbs: 68,
+          fat: 7,
+        },
+      }),
+    }
+  );
+  assert.equal(replacement.response.status, 200);
+  assert.equal(replacement.data.meal.food_log_id, foodLogs[initialFoodLogCount].food_log_id);
+  assert.equal(foodLogs[initialFoodLogCount].is_consumed, true);
+
+  const otherUser = await request(
+    `/api/diet/recommendations/${recommendation.recommended_meal_id}`,
+    {
+      method: "PATCH",
+      cookie: second.cookie,
+      body: JSON.stringify({ status: "completed" }),
+    }
+  );
+  assert.equal(otherUser.response.status, 404);
+});
+
+test("water, activity, sleep, and schedule records persist per authenticated user", async () => {
+  const first = await register(
+    "Tracking User",
+    `tracking-${Date.now()}@example.test`
+  );
+  const second = await register(
+    "Other Tracking User",
+    `tracking-other-${Date.now()}@example.test`
+  );
+  const date = new Date().toISOString().slice(0, 10);
+
+  const water = await request("/api/wellness/water", {
+    method: "POST",
+    cookie: first.cookie,
+    body: JSON.stringify({ entry_date: date, amount_ml: 350 }),
+  });
+  assert.equal(water.response.status, 201);
+  const waterSummary = await request(`/api/wellness/water?date=${date}`, {
+    cookie: first.cookie,
+  });
+  assert.equal(waterSummary.data.total_ml, 350);
+  const otherWater = await request(`/api/wellness/water?date=${date}`, {
+    cookie: second.cookie,
+  });
+  assert.equal(otherWater.data.total_ml, 0);
+  const removedWater = await request(
+    `/api/wellness/water/${water.data.entry.water_entry_id}`,
+    { method: "DELETE", cookie: first.cookie }
+  );
+  assert.equal(removedWater.response.status, 200);
+
+  const activity = await request("/api/wellness/activities", {
+    method: "POST",
+    cookie: first.cookie,
+    body: JSON.stringify({
+      activity_date: date,
+      activity_type: "Walking",
+      steps: 4200,
+      distance_m: 3100,
+      active_minutes: 35,
+      data_source: "manual",
+    }),
+  });
+  assert.equal(activity.response.status, 201);
+  assert.equal(activity.data.entry.steps, 4200);
+
+  const sleep = await request("/api/wellness/sleep", {
+    method: "PUT",
+    cookie: first.cookie,
+    body: JSON.stringify({
+      sleep_date: date,
+      duration_hours: 7.5,
+      sleep_quality: 4,
+      fatigue_rating: 2,
+      soreness_rating: 1,
+    }),
+  });
+  assert.equal(sleep.response.status, 200);
+  assert.equal(sleep.data.sleep.duration_minutes, 450);
+  assert.equal(sleep.data.sleep.sleep_start, null);
+  assert.equal(sleep.data.sleep.wake_time, null);
+
+  const schedules = await request("/api/wellness/schedule", {
+    method: "PUT",
+    cookie: first.cookie,
+    body: JSON.stringify({
+      schedules: [
+        {
+          habit_key: "water",
+          weekdays: [0, 1, 2, 3, 4, 5, 6],
+          target_value: 2000,
+          enabled: true,
+        },
+        {
+          habit_key: "workout",
+          weekdays: [1, 3, 5],
+          target_value: null,
+          enabled: true,
+        },
+      ],
+    }),
+  });
+  assert.equal(schedules.response.status, 200);
+  assert.equal(habitSchedules.length, 2);
 });
 
 test("Food Snap rejects invalid uploads, provider failures, and timeouts", async () => {

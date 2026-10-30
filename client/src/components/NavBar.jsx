@@ -1,7 +1,26 @@
-import React from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getCurrentUser, logout } from "../services/foodApi";
 
 function Navbar() {
+  const navigate = useNavigate();
+  const [userName, setUserName] = useState("");
+
+  useEffect(() => {
+    getCurrentUser()
+      .then(({ user }) => setUserName(user.name))
+      .catch(() => setUserName(""));
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await logout();
+      navigate("/login", { replace: true });
+    } catch (error) {
+      console.error("Unable to log out:", error);
+    }
+  }
+
   return (
     <nav className="sticky top-0 z-20 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
@@ -24,14 +43,15 @@ function Navbar() {
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 font-semibold text-slate-950">
               R
             </div>
-            <span className="font-medium">Raman</span>
+            <span className="font-medium">{userName || "Account"}</span>
           </div>
-          <Link
-            to="/login"
+          <button
+            type="button"
+            onClick={handleLogout}
             className="rounded-full border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20"
           >
             Logout
-          </Link>
+          </button>
         </div>
       </div>
     </nav>
