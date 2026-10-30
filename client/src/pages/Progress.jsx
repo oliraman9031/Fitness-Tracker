@@ -1,69 +1,57 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Navbar from "../components/NavBar";
 import Sidebar from "../components/Sidebar";
 import ProgressChart from "../components/PorgressChart";
-import {
-  getProgress,
-  getProgressAnalysis,
-  getWellnessProfile,
-  saveProgress,
-} from "../services/foodApi";
-
-function formatProgress(entries) {
-  return entries.map((item) => ({
-    date: new Date(item.recorded_date).toLocaleDateString(),
-    weight: Number(item.weight),
-  }));
-}
+import { getProgress, saveProgress } from "../services/foodApi";
 
 function Progress() {
-  const navigate = useNavigate();
   const [weight, setWeight] = useState("");
   const [progressData, setProgressData] = useState([]);
-  const [heightCm, setHeightCm] = useState("");
-  const [bmi, setBmi] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [saving, setSaving] = useState(false);
+
+  async function loadProgress() {
+    setError("");
+    try {
+      const records = await getProgress();
+      setProgressData(
+        (Array.isArray(records) ? records : []).map((item) => ({
+          date: new Date(item.recorded_date).toLocaleDateString(),
+          weight: Number(item.weight),
+        }))
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    Promise.all([getProgress(), getWellnessProfile(), getProgressAnalysis()])
-      .then(([data, profile, analysis]) => {
-        setProgressData(formatProgress(data));
-        setHeightCm(profile.profile.height_cm ?? "");
-        setBmi(analysis.summary.bmi);
-      })
-      .catch((loadError) => {
-        if (loadError.status === 401) {
-          navigate("/login", { replace: true });
-        } else {
-          setError(loadError.message);
-        }
-      });
-  }, [navigate]);
+    loadProgress();
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
-    setSaving(true);
     setError("");
     setMessage("");
+
+    const numericWeight = Number(weight);
+    if (!Number.isFinite(numericWeight) || numericWeight <= 0) {
+      setError("Enter a valid positive weight.");
+      return;
+    }
+
+    setSaving(true);
     try {
-      await saveProgress(weight);
-      const [progress, analysis] = await Promise.all([
-        getProgress(),
-        getProgressAnalysis(),
-      ]);
-      setProgressData(formatProgress(progress));
-      setBmi(analysis.summary.bmi);
+      await saveProgress(numericWeight);
       setWeight("");
-      setMessage("Weight entry saved.");
-    } catch (saveError) {
-      if (saveError.status === 401) {
-        navigate("/login", { replace: true });
-      } else {
-        setError(saveError.message);
-      }
+      setMessage("Progress recorded.");
+      await loadProgress();
+    } catch (err) {
+      setError(err.message);
     } finally {
       setSaving(false);
     }
@@ -76,43 +64,40 @@ function Progress() {
         <Sidebar />
         <main className="min-w-0 flex-1">
           <div className="rounded-[32px] border border-slate-800 bg-slate-900/80 p-6">
-            <p className="text-xs uppercase tracking-[0.32em] text-cyan-300">Milestones</p>
+            <p className="text-xs uppercase tracking-[0.32em] text-cyan-300">
+              Milestones
+            </p>
             <h1 className="mt-3 text-3xl font-bold text-white">Progress</h1>
+
             <form onSubmit={handleSubmit} className="mt-6 flex flex-wrap gap-3">
-              <label className="sr-only" htmlFor="weight-entry">Today's weight</label>
               <input
-                id="weight-entry"
                 type="number"
                 min="0.1"
-                max="9999.99"
                 step="0.1"
                 value={weight}
                 onChange={(event) => setWeight(event.target.value)}
-                placeholder="Enter today's weight"
-                className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white"
+                placeholder="Enter weight"
+                className="min-w-0 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white"
                 required
               />
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-2xl bg-gradient-to-r from-violet-500 to-cyan-500 px-5 py-3 font-semibold text-slate-950 disabled:opacity-60"
+                className="rounded-2xl bg-gradient-to-r from-violet-500 to-cyan-500 px-5 py-3 font-semibold text-slate-950 disabled:opacity-50"
               >
-                {saving ? "Saving..." : "Record Weight"}
+                {saving ? "Saving..." : "Record"}
               </button>
             </form>
+
             {error && <p role="alert" className="mt-4 text-sm text-rose-300">{error}</p>}
-            {message && <p role="status" className="mt-4 text-sm text-emerald-300">{message}</p>}
-            <section className="mt-6 rounded-2xl border border-violet-500/30 bg-violet-500/10 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-violet-200">BMI · wellness screening measure</p>
-              <p className="mt-2 text-3xl font-bold text-white">{bmi ? bmi.value : "—"}</p>
-              <p className="mt-1 text-sm text-violet-100">
-                {bmi ? bmi.category : "Record your weight and add your height in dashboard tracking settings."}
-              </p>
-              {bmi?.note && <p className="mt-2 text-xs text-slate-300">{bmi.note}</p>}
-            </section>
-            <div className="mt-8">
-              <ProgressChart data={progressData} heightCm={heightCm} />
-            </div>
+            {message && <p className="mt-4 text-sm text-emerald-300">{message}</p>}
+            {loading ? (
+              <p className="mt-6 text-slate-400">Loading progress...</p>
+            ) : (
+              <div className="mt-8">
+                <ProgressChart data={progressData} />
+              </div>
+            )}
           </div>
         </main>
       </div>
