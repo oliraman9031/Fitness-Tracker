@@ -41,6 +41,9 @@ Use this structure:
       ]
     }
   ],
+  "progressInsights": [
+    {"type":"positive|pattern|observation|missing_data", "message":""}
+  ],
   "explanation": "",
   "safetyNotes": ""
 }
@@ -54,6 +57,15 @@ Rules:
 - Do not prescribe calorie deficits, extreme exercise, or restrictive diets.
 - Food intake and calorie-burn estimates are not exact measures of fitness.
 - Respect the user's stated food preference.
+- Respect recorded allergies, equipment, and home/gym preferences. If these
+  details are absent, do not assume them and mention the missing information.
+- Base observations on the supplied history and distinguish measured facts from
+  estimates. Identify positive changes, changing patterns, nutrition and
+  hydration observations, sleep/recovery context, and missing records.
+- Recommend only modest, sustainable changes. Never recommend restrictive
+  eating or automatically increase workout intensity.
+- Consider self-reported sleep and recovery when available. If recovery is low,
+  favor rest or gentle activity; do not treat a rating as a medical measure.
 - Do not invent USDA nutrient values.
 - Suggest balanced meals and reasonable activity options.
 - Always return a balanced three-day meal plan suitable for the stated diet
@@ -167,8 +179,7 @@ router.get("/daily-summary", async (req, res) => {
            ) AS meals
          FROM food_logs
          WHERE user_id = $1
-           AND created_at >= $2::date
-           AND created_at < ($2::date + INTERVAL '1 day')`,
+           AND logged_date = $2::date`,
         [userId, date]
       ),
       pool.query(
@@ -190,8 +201,7 @@ router.get("/daily-summary", async (req, res) => {
            ) AS activities
          FROM workout_logs
          WHERE user_id = $1
-           AND created_at >= $2::date
-           AND created_at < ($2::date + INTERVAL '1 day')`,
+           AND workout_date = $2::date`,
         [userId, date]
       ),
     ]);
@@ -215,8 +225,8 @@ router.post("/recommendations", async (req, res) => {
     const {
       available_time_minutes = 20,
       preferred_activities = ["walking", "mobility"],
-      diet_preference = "no preference",
-      fitness_goal = "general fitness",
+      diet_preference,
+      fitness_goal,
       date = new Date().toISOString().slice(0, 10),
     } = req.body;
 
@@ -235,7 +245,18 @@ router.post("/recommendations", async (req, res) => {
     }
 
     // Load the user's confirmed food intake and completed activity.
-    const [nutrition, workouts] = await Promise.all([
+    const [
+      nutrition,
+      wellness,
+      workouts,
+      profile,
+      mealHistory,
+      waterHistory,
+      activityHistory,
+      sleepHistory,
+      recoveryHistory,
+      schedules,
+    ] = await Promise.all([
       pool.query(
         `SELECT
            COALESCE(SUM(calories), 0) AS calories,
@@ -254,9 +275,14 @@ router.post("/recommendations", async (req, res) => {
            ) AS meals
          FROM food_logs
          WHERE user_id = $1
-           AND created_at >= $2::date
-           AND created_at < ($2::date + INTERVAL '1 day')
+           AND logged_date = $2::date
            AND is_consumed = TRUE`,
+        [userId, date]
+      ),
+      pool.query(
+        `SELECT steps, water_liters, sleep_hours, recovery_rating
+         FROM daily_wellness_logs
+         WHERE user_id = $1 AND activity_date = $2`,
         [userId, date]
       ),
       pool.query(
@@ -277,61 +303,154 @@ router.post("/recommendations", async (req, res) => {
            ) AS activities
          FROM workout_logs
          WHERE user_id = $1
-           AND created_at >= $2::date
-           AND created_at < ($2::date + INTERVAL '1 day')`,
+           AND workout_date = $2::date`,
         [userId, date]
+      ),
+      pool.query(
+        `SELECT name, height_cm, hydration_goal_ml, steps_goal,
+                profile_preferences
+         FROM users WHERE user_id = $1`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT recommendation_date, meal_type, food_name, status,
+                completed_at, calories, protein, carbs, fat
+         FROM recommended_meals
+         WHERE user_id = $1
+           AND recommendation_date BETWEEN $2::date - 13 AND $2::date
+         ORDER BY recommendation_date DESC, meal_type`,
+        [userId, date]
+      ),
+      pool.query(
+        `SELECT entry_date, SUM(amount_ml) AS total_ml
+         FROM daily_water_entries
+         WHERE user_id = $1 AND entry_date BETWEEN $2::date - 13 AND $2::date
+         GROUP BY entry_date ORDER BY entry_date`,
+        [userId, date]
+      ),
+      pool.query(
+        `SELECT activity_date, SUM(steps) AS steps,
+                SUM(distance_m) AS distance_m,
+                SUM(active_minutes) AS active_minutes
+         FROM daily_activity_entries
+         WHERE user_id = $1 AND activity_date BETWEEN $2::date - 13 AND $2::date
+         GROUP BY activity_date ORDER BY activity_date`,
+        [userId, date]
+      ),
+      pool.query(
+        `SELECT sleep_date, duration_minutes, sleep_quality,
+                fatigue_rating, soreness_rating
+         FROM sleep_logs
+         WHERE user_id = $1 AND sleep_date BETWEEN $2::date - 13 AND $2::date
+         ORDER BY sleep_date`,
+        [userId, date]
+      ),
+      pool.query(
+        `SELECT recovery_date, score, factors
+         FROM recovery_records
+         WHERE user_id = $1 AND recovery_date BETWEEN $2::date - 13 AND $2::date
+         ORDER BY recovery_date`,
+        [userId, date]
+      ),
+      pool.query(
+        `SELECT habit_key, weekdays, target_value, enabled
+         FROM scheduled_habits WHERE user_id = $1`,
+        [userId]
       ),
     ]);
 
     const context = {
       date,
       availableTimeMinutes: availableTime,
-      fitnessGoal: String(fitness_goal).slice(0, 100),
+      fitnessGoal: String(
+        fitness_goal || profile.rows[0]?.profile_preferences?.fitness_goal || "general fitness"
+      ).slice(0, 100),
       preferredActivities: Array.isArray(preferred_activities)
         ? preferred_activities.slice(0, 10).map((activity) =>
             String(activity).slice(0, 100)
           )
         : [],
-      dietPreference: String(diet_preference).slice(0, 100),
+      dietPreference: String(
+        diet_preference || profile.rows[0]?.profile_preferences?.diet_preference || "no preference"
+      ).slice(0, 100),
       nutrition: nutrition.rows[0],
       activity: workouts.rows[0],
+      wellness: wellness.rows[0] || null,
+      userProfile: profile.rows[0] || null,
+      actualFoodConsumption: nutrition.rows[0]?.meals || [],
+      recommendedMeals: mealHistory.rows,
+      waterHistory: waterHistory.rows,
+      activityHistory: activityHistory.rows,
+      sleepHistory: sleepHistory.rows,
+      recoveryHistory: recoveryHistory.rows,
+      scheduledHabits: schedules.rows,
+      missingInformation: [
+        ...(profile.rows[0]?.height_cm == null ? ["height"] : []),
+        ...(sleepHistory.rows.length ? [] : ["sleep history"]),
+        ...(schedules.rows.length ? [] : ["habit schedule"]),
+      ],
     };
-
-    if (AI_PROVIDER === "rules") {
-      return res.json({
-        source: "rules",
-        recommendations: {
-          activityRecommendations: [
-            {
-              name: "Comfortable walk",
-              durationMinutes: Math.min(availableTime, 20),
-              reason: "A simple, adjustable activity for general fitness.",
-            },
-            {
-              name: "Gentle mobility",
-              durationMinutes: 5,
-              reason: "An optional low-intensity alternative.",
-            },
-          ],
-          mealSuggestions: [
-            {
-              meal: "Next meal",
-              suggestion:
-                "Choose a balanced meal with a protein source, vegetables or fruit, carbohydrates and healthy fats, according to your preferences.",
-            },
-          ],
-          threeDayMealPlan: [],
-          explanation:
-            "These general suggestions do not use a generative AI model.",
-          safetyNotes:
-            "Do not exercise to compensate for food. Rest or choose a gentler activity when needed.",
-        },
-      });
-    }
-
     let textOutput;
 
-    if (AI_PROVIDER === "ollama") {
+    if (AI_PROVIDER === "rules") {
+      const progressInsights = [];
+      if (Number(workouts.rows[0]?.completed_workouts) > 0) {
+        progressInsights.push({
+          type: "positive",
+          message: `${workouts.rows[0].completed_workouts} completed workout(s) are logged today.`,
+        });
+      }
+      if (wellness.rows[0]?.water_liters != null) {
+        progressInsights.push({
+          type: "observation",
+          message: `Today's legacy check-in records ${wellness.rows[0].water_liters} L of water.`,
+        });
+      } else if (waterHistory.rows.length) {
+        progressInsights.push({
+          type: "observation",
+          message: `Water entries are recorded on ${waterHistory.rows.length} of the last 14 days.`,
+        });
+      }
+      if (sleepHistory.rows.length) {
+        const averageSleep = sleepHistory.rows.reduce(
+          (sum, entry) => sum + Number(entry.duration_minutes),
+          0
+        ) / sleepHistory.rows.length / 60;
+        progressInsights.push({
+          type: "pattern",
+          message: `Recorded sleep averages ${averageSleep.toFixed(1)} hours across ${sleepHistory.rows.length} logged night(s).`,
+        });
+      }
+      progressInsights.push(...context.missingInformation.map((item) => ({
+        type: "missing_data",
+        message: `No ${item} is recorded, so no conclusion was drawn from it.`,
+      })));
+      const recommendation = {
+        activityRecommendations: [
+          {
+            name: "Comfortable walk",
+            durationMinutes: Math.min(availableTime, 20),
+            reason: "A flexible, low-intensity option; adjust or rest according to how you feel.",
+          },
+          {
+            name: "Gentle mobility",
+            durationMinutes: Math.min(availableTime, 10),
+            reason: "An optional lighter alternative.",
+          },
+        ],
+        mealSuggestions: [
+          {
+            meal: "Next meal",
+            suggestion: "Choose a balanced meal from your preferred foods; use USDA search to review nutrition before logging.",
+          },
+        ],
+        threeDayMealPlan: [],
+        progressInsights,
+        explanation: "Rules-based suggestions use only recorded data and are not generated by Ollama.",
+        safetyNotes: "This is general wellness information, not medical advice. Do not exercise to compensate for food.",
+      };
+      return res.json({ source: "rules", recommendations: recommendation });
+    } else if (AI_PROVIDER === "ollama") {
       textOutput = await requestOllamaRecommendations(context);
     } else if (AI_PROVIDER === "openai") {
       if (!openai) {
@@ -374,6 +493,7 @@ router.post("/recommendations", async (req, res) => {
       !Array.isArray(recommendations.activityRecommendations) ||
       !Array.isArray(recommendations.mealSuggestions) ||
       !Array.isArray(recommendations.threeDayMealPlan) ||
+      !Array.isArray(recommendations.progressInsights) ||
       typeof recommendations.explanation !== "string" ||
       typeof recommendations.safetyNotes !== "string"
     ) {

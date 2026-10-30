@@ -4,6 +4,7 @@ const { validateProgress } = require("../middleware/validateProgress");
 
 const router = express.Router();
 
+router.get("/analysis", progressController.getAnalysis);
 router.post("/", validateProgress, progressController.addProgress);
 router.get("/", progressController.getProgress);
 

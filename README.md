@@ -36,6 +36,7 @@ The project focuses on connecting practical fitness tracking with intelligent fe
 - Record workouts and physical activities.
 - Track workout completion and estimated calories burned.
 - Maintain activity history for progress monitoring.
+- Save daily step, water, sleep, and self-reported recovery check-ins.
 
 ### 📊 Progress Analytics
 - Monitor fitness activity and progress through a centralized dashboard.
@@ -126,6 +127,8 @@ USDA_API_KEY=your_usda_api_key
 These names are illustrative; your implementation may use different database configuration variables.
 
 **Security:** Never commit API keys, passwords, or production credentials to GitHub. Add `.env` to `.gitignore`.
+
+The AI coach uses local Ollama by default (`AI_PROVIDER=ollama`) and expects the configured model, `qwen2.5:3b`, to be available. Start Ollama and run `ollama pull qwen2.5:3b` if it is not installed. Dashboard check-ins, workout logging, and progress tracking do not require Ollama. To use non-generative coaching instead, set `AI_PROVIDER=rules`.
 
 ### 4. Configure PostgreSQL
 

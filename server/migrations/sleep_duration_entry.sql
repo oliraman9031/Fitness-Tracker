@@ -1,0 +1,3 @@
+ALTER TABLE sleep_logs
+  ALTER COLUMN sleep_start DROP NOT NULL,
+  ALTER COLUMN wake_time DROP NOT NULL;

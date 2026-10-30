@@ -92,13 +92,26 @@ router.post("/login", async (req, res) => {
     );
     const user = result.rows[0];
 
-    if (
-      !user ||
-      typeof user.password_hash !== "string" ||
-      !user.password_hash.startsWith("$2") ||
-      !(await bcrypt.compare(password, user.password_hash))
-    ) {
+    if (!user || typeof user.password_hash !== "string") {
       return res.status(401).json({ message: "Invalid email or password." });
+    }
+
+    const hasBcryptHash = /^\$2[aby]\$\d{2}\$/.test(user.password_hash);
+    const passwordMatches = hasBcryptHash
+      ? await bcrypt.compare(password, user.password_hash)
+      : password === user.password_hash;
+    if (!passwordMatches) {
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
+
+    if (!hasBcryptHash) {
+      const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      await pool.query(
+        `UPDATE users
+         SET password_hash = $1
+         WHERE user_id = $2 AND password_hash = $3`,
+        [passwordHash, user.user_id, user.password_hash]
+      );
     }
 
     await createSession(user.user_id, res);

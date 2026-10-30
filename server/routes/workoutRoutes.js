@@ -1,6 +1,7 @@
 
 const express = require("express");
 const pool = require("../database");
+const { isISODate } = require("../utils/dateValidation");
 
 const router = express.Router();
 
@@ -13,10 +14,12 @@ router.post("/", async (req, res) => {
       calories_burned,
       notes,
       completed = true,
+      workout_date: workoutDate,
     } = req.body;
 
     const userId = req.user.id;
     const duration = Number(duration_minutes);
+    const date = workoutDate || new Date().toISOString().slice(0, 10);
 
     const calories =
       calories_burned === "" ||
@@ -25,9 +28,9 @@ router.post("/", async (req, res) => {
         ? null
         : Number(calories_burned);
 
-    if (typeof completed !== "boolean") {
+    if (typeof completed !== "boolean" || !isISODate(date)) {
       return res.status(400).json({
-        message: "completed must be true or false.",
+        message: "A valid workout date and completed status are required.",
       });
     }
 
@@ -76,8 +79,8 @@ router.post("/", async (req, res) => {
     const result = await pool.query(
       `INSERT INTO workout_logs
        (user_id, exercise_name, duration_minutes,
-        calories_burned, notes, completed)
-       VALUES ($1, $2, $3, $4, $5, $6)
+        calories_burned, notes, completed, workout_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         userId,
@@ -86,6 +89,7 @@ router.post("/", async (req, res) => {
         calories,
         notes || null,
         completed,
+        date,
       ]
     );
 
@@ -108,7 +112,7 @@ router.get("/", async (req, res) => {
       `SELECT *
        FROM workout_logs
        WHERE user_id = $1
-       ORDER BY created_at DESC, workout_id DESC`,
+       ORDER BY workout_date DESC, created_at DESC, workout_id DESC`,
       [req.user.id]
     );
 

@@ -8,9 +8,9 @@ import {
   saveFood,
   getFoodLogs,
   updateConsumed,
+  getRecommendedMeals,
+  updateRecommendedMeal,
 } from "../services/foodApi";
-
-const USER_ID = 1; // Prototype only; replace with authenticated user.
 
 const emptyFood = {
   food_name: "",
@@ -20,6 +20,7 @@ const emptyFood = {
   protein: "",
   carbs: "",
   fat: "",
+  fdc_id: null,
 };
 
 function extractNutrients(food) {
@@ -89,11 +90,22 @@ export default function Diet() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [quantity, setQuantity] = useState("100");
+  const [recommendedMeals, setRecommendedMeals] = useState([]);
+  const [replacementMealId, setReplacementMealId] = useState(null);
 
   async function loadFoodLogs() {
     try {
-      const data = await getFoodLogs(USER_ID);
+      const data = await getFoodLogs();
       setFoodLogs(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function loadRecommendedMeals() {
+    try {
+      const result = await getRecommendedMeals(localDate());
+      setRecommendedMeals(result.meals || []);
     } catch (err) {
       setError(err.message);
     }
@@ -101,6 +113,7 @@ export default function Diet() {
 
   useEffect(() => {
     loadFoodLogs();
+    loadRecommendedMeals();
   }, []);
 
   async function handleSearch(event) {
@@ -141,6 +154,7 @@ export default function Diet() {
       setFood({
         ...emptyFood,
         food_name: detail.description || item.description,
+        fdc_id: detail.fdcId || item.fdcId,
         calories: String(nutrients.calories),
         protein: String(nutrients.protein),
         carbs: String(nutrients.carbs),
@@ -183,7 +197,6 @@ export default function Diet() {
       const factor = grams / 100;
 
       const payload = {
-        user_id: USER_ID,
         food_name: food.food_name,
         meal_type: food.meal_type,
         quantity: grams,
@@ -195,10 +208,20 @@ export default function Diet() {
         is_consumed: true,
       };
 
-      await saveFood(payload);
+      if (replacementMealId) {
+        await updateRecommendedMeal(replacementMealId, "completed", {
+          ...payload,
+          fdc_id: food.fdc_id,
+        });
+        setReplacementMealId(null);
+        setMessage("USDA food replaced the recommendation and was logged as consumed.");
+        await loadRecommendedMeals();
+      } else {
+        await saveFood(payload);
+        setMessage("Food added successfully.");
+      }
       setFood(emptyFood);
       setQuantity("100");
-      setMessage("Food added successfully.");
       await loadFoodLogs();
     } catch (err) {
       setError(err.message);
@@ -213,13 +236,39 @@ export default function Diet() {
     try {
       await updateConsumed(
         item.food_log_id,
-        USER_ID,
         !item.is_consumed
       );
       await loadFoodLogs();
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  async function updateMealStatus(meal, status) {
+    setError("");
+    try {
+      await updateRecommendedMeal(meal.recommended_meal_id, status);
+      await Promise.all([loadRecommendedMeals(), loadFoodLogs()]);
+      setMessage(
+        status === "completed"
+          ? "Meal check-in completed. Nutrition totals only include food you log."
+          : status === "skipped"
+            ? "Meal marked as skipped."
+            : "Meal check-in undone."
+      );
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function chooseUSDAReplacement(meal) {
+    setReplacementMealId(meal.recommended_meal_id);
+    setFood({ ...emptyFood, meal_type: meal.meal_type });
+    document.getElementById("usda-food-search")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    setMessage(`Choose a USDA food to replace the ${meal.meal_type.toLowerCase()} suggestion.`);
   }
 
   const today = localDate();
@@ -302,7 +351,7 @@ export default function Diet() {
             ))}
           </section>
 
-          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+          <section id="usda-food-search" className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
             <h2 className="text-xl font-semibold">Search USDA foods</h2>
 
             <form onSubmit={handleSearch} className="mt-4 flex gap-3">
@@ -347,7 +396,49 @@ export default function Diet() {
           </section>
 
           <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
-            <h2 className="text-xl font-semibold">Add food to today's log</h2>
+            <h2 className="text-xl font-semibold">Recommended meals</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Recommendations are not food logs. Check in when you have eaten one; log a USDA food separately to count its nutrition.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {recommendedMeals.map((meal) => (
+                <article key={meal.recommended_meal_id} className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
+                  <p className="text-xs uppercase tracking-wider text-cyan-300">{meal.meal_type}</p>
+                  <h3 className="mt-2 font-semibold text-white">{meal.food_name}</h3>
+                  {meal.status === "completed" && (
+                    <p className="mt-2 text-xs text-emerald-300">
+                      Checked in{meal.completed_at ? ` · ${new Date(meal.completed_at).toLocaleTimeString()}` : ""}
+                      {meal.food_log_id ? " · USDA food logged" : " · no food nutrition logged"}
+                    </p>
+                  )}
+                  {meal.status === "skipped" && <p className="mt-2 text-xs text-amber-300">Explicitly marked skipped</p>}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateMealStatus(meal, meal.status === "completed" ? "planned" : "completed")}
+                      className="rounded-lg bg-emerald-400 px-3 py-2 text-sm font-medium text-slate-950"
+                    >
+                      {meal.status === "completed" ? "Undo check-in" : "Mark completed"}
+                    </button>
+                    <button type="button" onClick={() => updateMealStatus(meal, meal.status === "skipped" ? "planned" : "skipped")} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300">
+                      {meal.status === "skipped" ? "Undo skipped" : "Mark skipped"}
+                    </button>
+                    <button type="button" onClick={() => chooseUSDAReplacement(meal)} className="rounded-lg border border-cyan-500/40 px-3 py-2 text-sm text-cyan-200">
+                      Replace with USDA food
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {!recommendedMeals.length && (
+                <p className="text-sm text-slate-400">No meal recommendations saved for today. Generate coach guidance on the dashboard.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+            <h2 className="text-xl font-semibold">
+              {replacementMealId ? "Choose replacement portion" : "Add food to today's log"}
+            </h2>
 
             <form onSubmit={handleAddFood} className="mt-4 space-y-4">
               <input

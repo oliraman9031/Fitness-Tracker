@@ -15,9 +15,24 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+function isAllowedOrigin(origin) {
+  if (!origin || allowedOrigins.includes(origin)) return true;
+  if (process.env.NODE_ENV === "production") return false;
+
+  try {
+    const parsedOrigin = new URL(origin);
+    return (
+      parsedOrigin.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsedOrigin.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 app.use(cors({
   origin(origin, callback) {
-    callback(null, !origin || allowedOrigins.includes(origin));
+    callback(null, isAllowedOrigin(origin));
   },
   credentials: true,
 }));
@@ -34,6 +49,7 @@ const authRoutes = require("./routes/authRoutes");
 
 const workoutRoutes = require("./routes/workoutRoutes");
 const coachRoutes = require("./routes/coachRoutes");
+const wellnessRoutes = require("./routes/wellnessRoutes");
 
 app.get("/api/health", async (req, res) => {
   try {
@@ -49,7 +65,7 @@ app.use("/api", (req, res, next) => {
   const origin = req.get("origin");
   const isMutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
 
-  if (isMutation && origin && !allowedOrigins.includes(origin)) {
+  if (isMutation && origin && !isAllowedOrigin(origin)) {
     return res.status(403).json({ message: "Request origin is not allowed." });
   }
   return next();
@@ -58,6 +74,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api", requireAuth(pool));
 app.use("/api/workouts", workoutRoutes);
 app.use("/api/coach", coachRoutes);
+app.use("/api/wellness", wellnessRoutes);
 app.use("/api/progress", progressRoutes);
 app.use("/api/diet", dietRoutes);
 app.use("/api/food", foodRoutes);
@@ -156,6 +173,21 @@ async function startServer() {
     `);
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS daily_wellness_logs (
+        wellness_log_id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        activity_date DATE NOT NULL,
+        steps INTEGER NOT NULL CHECK (steps BETWEEN 0 AND 100000),
+        water_liters NUMERIC(4, 1) NOT NULL CHECK (water_liters BETWEEN 0 AND 20),
+        sleep_hours NUMERIC(3, 1) NOT NULL CHECK (sleep_hours BETWEEN 0 AND 24),
+        recovery_rating SMALLINT NOT NULL CHECK (recovery_rating BETWEEN 1 AND 5),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_id, activity_date)
+      )
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS meal_plans (
         plan_id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users(user_id),
@@ -172,13 +204,48 @@ async function startServer() {
       CREATE INDEX IF NOT EXISTS idx_workout_logs_user_created
         ON workout_logs (user_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_meal_plans_user_date
-        ON meal_plans (user_id, plan_date)
+        ON meal_plans (user_id, plan_date);
+      CREATE INDEX IF NOT EXISTS idx_wellness_logs_user_date
+        ON daily_wellness_logs (user_id, activity_date)
     `);
 
-    const authenticationMigration = fs.readFileSync(
-      path.join(__dirname, "migrations", "authentication.sql"),
-      "utf8"
-    );
+    const migrations = [
+      {
+        name: "authentication",
+        sql: fs.readFileSync(
+          path.join(__dirname, "migrations", "authentication.sql"),
+          "utf8"
+        ),
+      },
+      {
+        name: "wellness_tracking",
+        sql: fs.readFileSync(
+          path.join(__dirname, "migrations", "wellness_tracking.sql"),
+          "utf8"
+        ),
+      },
+      {
+        name: "sleep_duration_entry",
+        sql: fs.readFileSync(
+          path.join(__dirname, "migrations", "sleep_duration_entry.sql"),
+          "utf8"
+        ),
+      },
+      {
+        name: "workout_tracking_date",
+        sql: fs.readFileSync(
+          path.join(__dirname, "migrations", "workout_tracking_date.sql"),
+          "utf8"
+        ),
+      },
+      {
+        name: "recommended_meal_unique",
+        sql: fs.readFileSync(
+          path.join(__dirname, "migrations", "recommended_meal_unique.sql"),
+          "utf8"
+        ),
+      },
+    ];
     const migrationClient = await pool.connect();
     try {
       await migrationClient.query("BEGIN");
@@ -189,16 +256,18 @@ async function startServer() {
           applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      const appliedMigration = await migrationClient.query(
-        "SELECT 1 FROM app_migrations WHERE name = $1",
-        ["authentication"]
-      );
-      if (!appliedMigration.rowCount) {
-        await migrationClient.query(authenticationMigration);
-        await migrationClient.query(
-          "INSERT INTO app_migrations (name) VALUES ($1)",
-          ["authentication"]
+      for (const migration of migrations) {
+        const appliedMigration = await migrationClient.query(
+          "SELECT 1 FROM app_migrations WHERE name = $1",
+          [migration.name]
         );
+        if (!appliedMigration.rowCount) {
+          await migrationClient.query(migration.sql);
+          await migrationClient.query(
+            "INSERT INTO app_migrations (name) VALUES ($1)",
+            [migration.name]
+          );
+        }
       }
       await migrationClient.query("COMMIT");
     } catch (error) {
