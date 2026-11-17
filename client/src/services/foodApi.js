@@ -307,7 +307,7 @@ export function getRecovery(date, days = 14) {
   );
 }
 
-export function getProgressAnalysis(date) {
+export function getProgressAnalysis(date = localDate()) {
   const timezoneOffsetMinutes = new Date().getTimezoneOffset();
   return request(
     `/progress/analysis?date=${encodeURIComponent(date)}&timezone_offset_minutes=${timezoneOffsetMinutes}`
