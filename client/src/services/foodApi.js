@@ -67,12 +67,16 @@ function localDate() {
 
 async function request(path, options = {}) {
   let response;
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       ...options,
       credentials: "include",
       headers: {
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(options.body && !isFormData
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...options.headers,
       },
     });
@@ -122,6 +126,15 @@ export function searchFoods(query) {
   return request(
     `/food/search?query=${encodeURIComponent(query)}`
   );
+}
+
+export function analyzeFoodSnap(image) {
+  const body = new FormData();
+  body.append("image", image);
+  return request("/food/ai-snap", {
+    method: "POST",
+    body,
+  });
 }
 
 export function getFoodDetails(fdcId) {

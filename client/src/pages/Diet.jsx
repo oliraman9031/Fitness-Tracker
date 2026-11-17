@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import Navbar from "../components/NavBar";
 import Sidebar from "../components/Sidebar";
 import {
+  analyzeFoodSnap,
   searchFoods,
   getFoodDetails,
   saveFood,
@@ -87,6 +88,9 @@ export default function Diet() {
   const [foodLogs, setFoodLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [snapImage, setSnapImage] = useState(null);
+  const [snapItems, setSnapItems] = useState([]);
+  const [snapLoading, setSnapLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [quantity, setQuantity] = useState("100");
@@ -141,6 +145,49 @@ export default function Diet() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleFoodSnap(event) {
+    event.preventDefault();
+    if (!snapImage) {
+      setError("Choose a food photo to scan.");
+      return;
+    }
+
+    setError("");
+    setMessage("");
+    setSnapLoading(true);
+    setSnapItems([]);
+
+    try {
+      const result = await analyzeFoodSnap(snapImage);
+      setSnapItems(Array.isArray(result.items) ? result.items : []);
+      setMessage(result.note || "Review the visual estimates before logging.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSnapLoading(false);
+    }
+  }
+
+  function chooseFoodSnapItem(item) {
+    setReplacementMealId(null);
+    setFood({
+      ...emptyFood,
+      food_name: item.name,
+      calories: String(item.nutritionPer100g.calories),
+      protein: String(item.nutritionPer100g.protein),
+      carbs: String(item.nutritionPer100g.carbs),
+      fat: String(item.nutritionPer100g.fat),
+    });
+    setQuantity(String(item.portionGrams));
+    setMessage(
+      "AI estimate loaded into the food form. Review the portion and nutrition before logging."
+    );
+    document.getElementById("food-entry-form")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }
 
   async function selectFood(item) {
@@ -351,6 +398,84 @@ export default function Diet() {
             ))}
           </section>
 
+          <section className="rounded-3xl border border-violet-500/30 bg-violet-500/5 p-5">
+            <p className="text-xs uppercase tracking-[0.25em] text-violet-300">
+              AI-powered food logging
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-white">Food Snap</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Upload a meal photo to estimate its foods, portions, and nutrition.
+              Estimates are approximate; review them before adding to your log.
+            </p>
+            <form onSubmit={handleFoodSnap} className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <label className="sr-only" htmlFor="food-snap-image">Choose a food photo</label>
+              <input
+                id="food-snap-image"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                onChange={(event) => {
+                  setSnapImage(event.target.files?.[0] || null);
+                  setSnapItems([]);
+                  setError("");
+                  setMessage("");
+                }}
+                className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-slate-100"
+              />
+              <button
+                type="submit"
+                disabled={!snapImage || snapLoading}
+                className="rounded-xl bg-violet-400 px-5 py-3 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {snapLoading ? "Analyzing photo..." : "Analyze photo"}
+              </button>
+            </form>
+            {snapLoading && (
+              <p role="status" className="mt-3 text-sm text-violet-200">
+                Analyzing your photo. This may take a few seconds.
+              </p>
+            )}
+            {snapItems.length > 0 && (
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                {snapItems.map((item, index) => {
+                  const portionFactor = item.portionGrams / 100;
+                  return (
+                    <article
+                      key={`${item.name}-${index}`}
+                      className="rounded-2xl border border-slate-700 bg-slate-950/80 p-4"
+                    >
+                      <h3 className="font-semibold text-white">{item.name}</h3>
+                      <p className="mt-1 text-sm text-slate-400">
+                        Estimated portion: {item.portionGrams} g
+                      </p>
+                      <p className="mt-2 text-sm text-slate-300">
+                        {Math.round(item.nutritionPer100g.calories * portionFactor)} kcal
+                        {" · "}
+                        {(item.nutritionPer100g.protein * portionFactor).toFixed(1)} g protein
+                        {" · "}
+                        {(item.nutritionPer100g.carbs * portionFactor).toFixed(1)} g carbs
+                        {" · "}
+                        {(item.nutritionPer100g.fat * portionFactor).toFixed(1)} g fat
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => chooseFoodSnapItem(item)}
+                        className="mt-4 rounded-lg bg-violet-400 px-4 py-2 text-sm font-semibold text-slate-950"
+                      >
+                        Review and add
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+            {!snapLoading && snapImage && snapItems.length === 0 && message && (
+              <p className="mt-3 text-sm text-slate-300">
+                No food was recognized. Try a clearer photo with the meal visible.
+              </p>
+            )}
+          </section>
+
           <section id="usda-food-search" className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
             <h2 className="text-xl font-semibold">Search USDA foods</h2>
 
@@ -395,7 +520,7 @@ export default function Diet() {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+          <section id="food-entry-form" className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
             <h2 className="text-xl font-semibold">Recommended meals</h2>
             <p className="mt-2 text-sm text-slate-400">
               Recommendations are not food logs. Check in when you have eaten one; log a USDA food separately to count its nutrition.
